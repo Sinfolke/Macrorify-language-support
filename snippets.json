@@ -1,0 +1,186 @@
+{
+	"initialize defoult beginning": {
+		"prefix": "init",
+		"body": [
+			"//\t\t-----------------------------\t\t",
+			"//\t\t\t\tFUNCTIONS\t\t\t",
+			"//\t\t-----------------------------\t\t\n$0",
+			"fun invalid(val) {",
+				"// Usually applies to check settings and matches",
+				"if (val == null) {",
+					"\treturn true;",
+				"} else if (val == \"\" or val == []) {",
+					"\treturn true;",
+				"} else {",
+					"\treturn false;",
+				"}",
+			"}",
+			"fun error(mes, num, line, advise) {",
+				"\t// This function is independed from \"invalid\",",
+				"\t// so i open\n",
+				"\t// mes: error message to be outputted",
+				"\t// num: number of error",
+				"\t// line: a line of code an error was executed",
+				"\t// advise: advise for user what to do",
+				"\tvar buildenNum = \"\";",
+				"\tvar buildenLine = \"\";",
+				"\tvar buildenAdvise = \"\";",
+				"\tif (!mes) {",
+					"\t\tSys.alert(\"An unknown error occurred\");",
+					"\t\tSys.stop();",
+				"\t}",
+				"\tif (num != null) {",
+					"\t\tbuildenNum = \" \" + num;",
+				"\t}",
+				"\tif (line) {",
+					"\t\tbuildenLine = \" at line \" + line;",
+				"\t}",
+				"\tif (advise) {",
+					"\t\tbuildenAdvise = \"\\n\\n\" + advise;",
+				"\t}",
+				"Sys.alert(\"An error\" + buildenNum + \" occurred\" + buildenLine + \": \" + mes + buildenAdvise + \"\\nIf the error is still exist, contact the developer\");",
+				"// An error( --num) occurred( at line --line): --mes(\\n\\n--advise)\\nIf the error is still exist, contact the developer",
+				"\tSys.stop();",
+			"}"
+			]
+	},
+	"initialize setting builder": {
+		"prefix": "builderInit",
+		"body": [
+			"var builder = Setting.builder();",
+			"$0",
+			"var dialog = builder.build();",
+			"var result = dialog.show();",
+			"if (result) {\n\t\n} else {\n\t\n}"
+		]
+	},
+	"add new group": {
+		"prefix": "group",
+		"body": [
+			"builder.group();    // ${1:num}",
+			"\t$0",
+	  		"builder.groupEnd(); // ${1:num}"
+		]
+	},
+	"Add text": {
+		"prefix": "text",
+		"body": [
+			"builder.add(\"${1:txt}\", TextView(\"$2\"));$0"
+		]
+	},
+	"Add checkbox": {
+		"prefix": "checkbox",
+		"body": [
+			"builder.add(\"${1:checkbox}\", Checkbox(${2:false}, \"${4:text}\"));$0"
+		]
+	},
+	"Add radioGroup": {
+		"prefix": "radioGroup",
+		"body": [
+			"builder.add(\"${1:RadioGroup}\", RadioGroup([\"${2:name}\"], ${3:0})${4:.dropdown(true)});$0"
+		]
+	},
+	"Add editText": {
+		"prefix": "EditText",
+		"body": [
+			"builder.add(\"${1:EditText}\", EditText(\"${2:default text}\", ${3:0 - text, 1 - num}, \"${4:text above}\", \"${5:text below}\"));\n$0"
+		]
+	},
+	"function": {
+		"prefix": "fun",
+		"body": [
+			"fun ${1:name}($2) {\n\t$3\n}"
+		]
+	},
+	"Get value from settings": {
+		"prefix": "get",
+		"body": [
+			"Setting.get(\"$1\", ${2:defaultValue})"
+		]
+	},
+	"Creates pattern of ternary operator": {
+		"prefix": "tern",
+		"body": [
+			"${1:cond1} ${2:==} ${3:cond2} ? ${4:return at true} : ${5:return at false}"
+		]
+	},
+	"Create a title": {
+		"prefix": "title",
+		"body": [
+			"//\t\t-----------------------------\t\t",
+			"//\t\t\t$1\t\t\t",
+			"//\t\t-----------------------------\t\t\n$0"
+		]
+	},
+	"image detection": {
+		"prefix": "imgDetect",
+		"body": [
+			"var region = Region(${1:100, 100, 500, 500});",
+			"var match = region.click(\"${2:template name}\", FParam.timeout(${3:3000}).sRate(${4:2}).mScore(${5:0.8}));",		
+			"if (match) {\n\t// if defined\n} else {\n\t// if undefined\n}"
+		]
+	},
+	"Find image": {
+		"prefix": "findImg",
+		"body": [
+			"var match = find(\"${1:reference to image: string | Template}\", ${2:timeout: number | params: TParam})"
+		]
+	},
+	"Find text": {
+		"prefix": "findTxt",
+		"body": [
+			"var match = findText(\"${1:text: string | Template}\", ${2:timeout: number | params: TParam})"
+		]
+	},
+	
+	"text detection": {
+		"prefix": "textDetect",
+		"body": [
+			"var region = Region(${1:100, 100, 500, 500});",
+			"var match = region.clickText(${2:template name}, FParam.timeout(${3:3000}).sRate(${4:2}).mScore(${5:0.8}));",		
+			"if (match) {\n\t// on true\n} else {\n\t// on false\n}"
+		]
+	},
+	"multi detection": {
+		"prefix": "multiDetect",
+		"body": [
+			"var region1 = Region(x, y, w, h)",
+			"var region2 = Region(x, y, w, h)",
+			"var match1 = region1.find(template);",
+			"var match2 = region2.find(template);",
+			"if (match1 and match2) {",
+				"\t//Success",
+			"} else {",
+				"\t//Fail",
+			"}"
+		]
+	},
+	"if": {
+		"prefix": "if1",
+		"body": ["if (${1:condition}) {\n\t$0\n}"]
+	},
+	"if + else": {
+		"prefix": "if2",
+		"body": ["if (${1:condition}) {\n\t$2\n} else {\n\t$0\n}"]
+	},
+	"if + else if": {
+		"prefix": "if3",
+		"body": ["if (${1:condition}) {\n\t$2\n} else if (${3:condition}) {\n\t$0\n}"]
+	},
+	"if + else if + else": {
+		"prefix": "if4",
+		"body": ["if (${1:condition}) {\n\t$2\n} else if (${3:condition}) {\n\t$4\n} else {\n\t$5\n}"]
+	},
+	"for-loop": {
+		"prefix": "for",
+		"body": ["for (var i = ${1:0}; ${2:i < arr.length}; i = i + 1) {\n\t$0\n}"]
+	},
+	"while-loop": {
+		"prefix": "while",
+		"body": ["while($1) {\n\t$0\n}"]
+	},
+	"do while-loop": {
+		"prefix": "do-while",
+		"body": ["do {\n\t$0\n} while($1)"]
+	}
+}

@@ -1,0 +1,49 @@
+,
+		"configuration": {
+			"type": "object",
+			"title": "Example configuration",
+			"properties": {
+				"Errors handler.CheckErrors": {
+					"scope": "resource",
+					"type": "boolean",
+					"default": true,
+					"description": "Check a file for syntax errors"
+				},
+				"Errors handler.CheckSemicolon": {
+					"scope": "resource",
+					"type": "boolean",
+					"default": true,
+					"description": "Check whether a string ends with semicolon"
+				},
+				"Errors handler.PerformHighChecks": {
+					"scope": "resource",
+					"type": "boolean",
+					"default": true,
+					"description": 
+					"High checks includes data analyation of variables, functions and methods. It sometimes might slow or freezee a computer"
+				},
+				"Intellisense.IncludeIntellisense": {
+					"scope": "resource",
+					"type": "boolean",
+					"default": true,
+					"description": "Include hints when you are writing a code"
+				},
+				"Intellisense.AnalyzeDataType": {
+					"scope": "resource",
+					"type": "boolean",
+					"default": true,
+					"description": "Show methods intellisense depends on data type of object. For example for array show only array methods."
+				},
+				"languageServerExample.trace.server": {
+					"scope": "window",
+					"type": "string",
+					"enum": [
+						"off",
+						"messages",
+						"verbose"
+					],
+					"default": "off",
+					"description": "Traces the communication between VS Code and the language server."
+				}
+			}
+		}
