@@ -16,7 +16,7 @@ import {
 	TextDocumentSyncKind,
 	InitializeResult,
 } from "vscode-languageserver/node";
-import { TextDocument } from "vscode-languageserver-textdocument";
+import { Position, TextDocument } from "vscode-languageserver-textdocument";
 
   
   // Create a connection for the server, using Node's IPC as a transport.
@@ -137,7 +137,7 @@ documents.onDidChangeContent(change => {
 interface data {
 	name: string;
 	type: string;
-	declaredInFunction: boolean;
+	scope: Array<number | boolean>;
 	wasUsed: boolean;
   }
 let data: data[] = [
@@ -165,6 +165,15 @@ function getKeyword(string:string) {
 		parent = parent[0];
 	}
 	parent = parent.trim().replace(";", "");
+	const unconstructed = string.split(".");
+	for (let i = 0; i < data.length; i++) {
+		for (let j = 0; j < unconstructed.length; j++) {
+			if (unconstructed[j].trim() == data[i].name.trim()) {
+				unconstructed[j] = data[i].type;
+			}
+		}
+	}
+	string = unconstructed.join(".");
 	if (parent == "Sys") {
 		return "Sys";
 	} else if (parent == "Map") {
@@ -185,9 +194,9 @@ function getKeyword(string:string) {
 	} else if (parent == 'Touch') {
 		return "Touch";
 	} else if (string?.match(/\s*Region\s*\(.*\).(findText|findMultiText|findAllText|findAnyText)\s*\(.*\)/)) { // Region with brackets
-		return "Region().findText().";
+		return "Region().findText()";
 	} else if (string?.match(/\s*Region\s*\(.*\).(find|findMulti|findAll|findAny)\s*\(.*\)/)) { // Region with brackets
-		return "Region().find().";
+		return "Region().find()";
 	}  else if (string.match(/\s*Region\s*\(.*\)/)) { // Region with brackets
 		return "Region()";
 	} else if (parent == 'Region') {
@@ -195,9 +204,9 @@ function getKeyword(string:string) {
 	} else if (parent == 'Template') {
 		return "Template";
 	} else if (string.match(/Template.(image|text|color|setDefaultScale)\(.*\)./)) {
-		return "Template.image().";
+		return "Template.image()";
 	} else if (string.match(/Setting.builder\s*\(.*\).build\s*\(.*\)/)) {
-		return "Setting.builder().build().";
+		return "Setting.builder().build()";
 	} else if (string.match(/Setting.builder\s*\(.*\)/)) {
 		return "Setting.builder()";
 	} else if (parent == "Setting") {
@@ -234,7 +243,6 @@ function getKeyword(string:string) {
 }
 let allNames:Array<string> = [];
 let wasDoWhile = false;
-const watch:Array<string> = [];
 async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 	data = [];
 	allNames = [];
@@ -271,7 +279,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 				start: textDocument.positionAt(text.indexOf(strings[checkIndex]) + strings[checkIndex].indexOf(str) + emphasize.index),
 				end: textDocument.positionAt(text.indexOf(strings[checkIndex]) + strings[checkIndex].indexOf(str) + emphasize.index + emphasize[0].length),
 				},
-				message: `${diagnosticMessage}, ${data[data.length - 1].type}`,
+				message: `${diagnosticMessage}`,
 				source: 'macr, macrorify',
 			};
 
@@ -315,10 +323,22 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 				!sliced.includes("Setting") && !sliced.includes("Sys") &&
 				!sliced.includes("[") && isNaN(Number(sliced.trim().slice(0, 1))) &&
 				!sliced.includes("fun") && getKeyword(sliced) == "any") {
-				for (let i = 0; i < allNames.length; i++) {
-					if (sliced.trim() == allNames[i].trim()) {
-						wasVarName = true;
-						break;
+				if (sliced.includes(".") || sliced.includes("+")) {
+					const splitted = sliced.split(sliced.includes("+") ? "+" : ".");
+					for (let i = 0; i < allNames.length; i++) {
+						for (let j = 0; j < splitted.length; j++) {
+							if (splitted[j].trim() == allNames[i].trim()) {
+								wasVarName = true;
+								break;
+							}
+						}
+					}
+				} else {
+					for (let i = 0; i < allNames.length; i++) {
+						if (sliced.trim() == allNames[i].trim()) {
+							wasVarName = true;
+							break;
+						}
 					}
 				}
 				if (!wasVarName) {
@@ -448,28 +468,57 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 		check(condition, /^["[\]0-9a-z]+\s*(<!|>!|<=!|>=!)\s*["[\]0-9a-z]+\s*$/, /(<!|>!|<=!|>=!)/, 1, "Operators are fully incorrect");
 	}
 	// Run all checks
-	let inFunction = false;
 	let inBlock = false;
+	let funBeginIn = 0;
+	let blcBeginIn = 0;
+	let funEndInWaiters = [];
+	let blcEndInWaiters = [];
 	for (const str of strings) {
 		checkIndex++;
 		if (str.replace(/ /g, "").startsWith("//") || strings[strings.length - 1] == str) {
 			continue;
 		}
-		const notClogged = str.replace(/"[^"]*"/g, "");
+		let notClogged = str.replace(/"[^"]*"/g, "");
+		if (notClogged.includes("//")) {
+			notClogged = notClogged.slice(0, notClogged.indexOf("//"));
+		}
 		if (notClogged.startsWith("fun")) {
-			inFunction = true;
+			funBeginIn = checkIndex;
+			// Get parameters as variables
+			const name = notClogged.slice(notClogged.indexOf("(") + 1, notClogged.indexOf(")")).trim().split(",");
+			name.forEach(parameter => {
+				data.push({ name: parameter, type: "any", wasUsed: false, scope: [funBeginIn + 1]});
+				funEndInWaiters.push(data.length - 1);
+				allNames.push(parameter);
+			});
 		} else if (notClogged.trim().includes("do")) {
 			wasDoWhile = true;
-		} else if (notClogged.includes("}")) {
+			blcBeginIn = checkIndex;
+		} else if (notClogged.includes("{")) {
 			inBlock = true;
+			blcBeginIn = checkIndex;
 		} 
 		if (notClogged.includes("}")) {
 			if (wasDoWhile) {
 				wasDoWhile = false;
+				const endIn = checkIndex;
+				blcEndInWaiters.forEach(num => {
+					data[num].scope[1] = endIn;
+				});
+				blcBeginIn = 0, blcEndInWaiters = [];
 			} else if (inBlock) {
 				inBlock = false;
+				const endIn = checkIndex;
+				blcEndInWaiters.forEach(num => {
+					data[num].scope[1] = endIn;
+				});
+				blcBeginIn = 0, blcEndInWaiters = [];
 			} else {
-				inFunction = false;
+				const endIn = checkIndex;
+				funEndInWaiters.forEach(num => {
+					data[num].scope[1] = endIn;
+				});
+				funBeginIn = 0, funEndInWaiters = [];
 			}
 		}
 		if (notClogged.trim().startsWith("var")) {
@@ -487,8 +536,17 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 			if (allNames.includes(name)) {
 				data[allNames.indexOf(name)].type = type;
 			} else {
-				data.push({ name: name, type: type, declaredInFunction: inFunction, wasUsed: false });
+				if (blcBeginIn || funBeginIn) {
+					data.push({ name: name, type: type, wasUsed: false, scope: [inBlock ? blcBeginIn : funBeginIn]});
+				} else {
+					data.push({ name: name, type: type, wasUsed: false, scope: [false]});
+				}
 				allNames.push(name);
+				if (wasDoWhile || inBlock) {
+					blcEndInWaiters.push(data.length - 1);
+				} else {
+					funEndInWaiters.push(data.length - 1);
+				}
 			}
 		}
 		semicolonCheck(notClogged);
@@ -512,6 +570,21 @@ connection.onDidChangeWatchedFiles(_change => {
 connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): CompletionItem[] => {
 	// Create intellisense array
 	const intellisense: CompletionItem[] = [];
+	const document = documents.get(_textDocumentPosition.textDocument.uri);
+	const position = _textDocumentPosition.position;
+	let line = document?.getText({
+		start: { line: position.line, character: 0 },
+		end: { line: position.line, character: position.character }
+	});
+	// Check whether a user declares variable
+	const newL = line?.replace(/ /g, "");
+	if (newL?.startsWith('var') && !newL.includes("=")) {
+		return intellisense;
+	}
+	// Check for lines that shouldn't get intellisense
+	if (line?.replace(/ /g, "").startsWith("//") || /['"][^'"]*$/.test(line || "")) {
+		return [];
+	}
 	function getNameOfElement(str: string): string {
 		// Split the string based on "."
 		const splittedStr = str.split(".");
@@ -766,38 +839,24 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 			'compare'
 		], CompletionItemKind.Method);
 	}
-        const document = documents.get(_textDocumentPosition.textDocument.uri);
-        const position = _textDocumentPosition.position;
-        let line = document?.getText({
-            start: { line: position.line, character: 0 },
-            end: { line: position.line, character: position.character }
-        });
-		// Check whether a user declares variable
-		const newL = line?.replace(/ /g, "");
-		if (newL?.startsWith('var') && !newL.includes("=")) {
-			return intellisense;
-		}
-        // Check for lines that shouldn't get intellisense
-		if (line?.replace(/ /g, "").startsWith("//") || /['"][^'"]*$/.test(line || "")) {
-			return [];
-		}
 		if (line?.includes(".")) {
 			// Include methods
 			let unconstructed:Array<any>;
 			if (line) {
 				unconstructed = line.split(".");
 				if (unconstructed.length > 1) {
+					if (unconstructed[0].includes("var") && unconstructed[0].includes("=")) {
+						unconstructed[0] = unconstructed[0].slice(unconstructed[0].indexOf("=") + 1);
+					}
 					for (let i = 0; i < data.length; i++) {
-						watch[0] = `${line.includes(data[i].name)}`;
 						for (let j = 0; j < unconstructed.length; j++) {
 							if (unconstructed[j].trim() == data[i].name.trim()) {
 								unconstructed[j] = data[i].type;
 							}
 						}
 					}
+					line = unconstructed.join(".");
 				}
-				watch[1] = unconstructed.join(".");
-				line = unconstructed.join(".");
 			} else {
 				return [];
 			}
@@ -821,24 +880,24 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				mathMethods();
 			} else if (parent == "Point") { // if point without brackets
 				pointMethods(0);
-			} else if (line.match(/^\s*Point\s*\(.*\)$/)) { // if Point is with brackets
+			} else if (line.match(/\s*Point\s*\(.*\)./)) { // if Point is with brackets
 				// Add methods for point with brackets
 				pointMethods(1);
-			} else if (line.match(/^\s*SwipePoint\s*\(.*\)$/)) { // if PointSwipe is with brackets
+			} else if (line.match(/\s*SwipePoint\s*\(.*\)./)) { // if PointSwipe is with brackets
 				SwipePointMethods();
 			} else if (parent == 'MultiSwipe') {
 				multiSwipeMethods(0);
-			} else if (line.match(/\s*MultiSwipe\s*\(.*\).builder\s*\(.*\)/)) {
+			} else if (line.match(/\s*MultiSwipe\s*\(.*\).builder\s*\(.*\)./)) {
 				multiSwipeMethods(1);
 			} else if (parent == 'Touch') {
 				TouchMethods();
 			} else if (parent == 'Region') {
 				regionMethods(0); // 
-			} else if (line?.match(/\s*Region\s*\(.*\).(findText|findMultiText|findAllText|findAnyText)\s*\(.*\)/)) { // Region with brackets
+			} else if (line?.match(/\s*Region\s*\(.*\).(findText|findMultiText|findAllText|findAnyText)\s*\(.*\)./)) { // Region with brackets
 				regionMethods(3);
-			} else if (line?.match(/\s*Region\s*\(.*\).(find|findMulti|findAll|findAny)\s*\(.*\)/)) { // Region with brackets
+			} else if (line?.match(/\s*Region\s*\(.*\).(find|findMulti|findAll|findAny)\s*\(.*\)./)) { // Region with brackets
 				regionMethods(2);
-			} else if (line.match(/\s*Region\s*\(.*\)/)) { // Region with brackets
+			} else if (line.match(/\s*Region\s*\(.*\).$/)) { // Region with brackets
 				regionMethods(1);
 			} else if (parent == "Template") { // Region with brackets
 				TemplateMethods(0);
@@ -846,27 +905,27 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				TemplateMethods(1);
 			} else if (parent == "Setting") {
 				settingMethods(0);
-			} else if (line.match(/Setting.builder\s*\(.*\).build\s*\(.*\)/)) {
+			} else if (line.match(/Setting.builder\s*\(.*\).build\s*\(.*\)./)) {
 				settingMethods(2);
-			} else if (line.match(/Setting.builder\s*\(.*\)/)) {
+			} else if (line.match(/Setting.builder\s*\(.*\)./)) {
 				settingMethods(1);
-			} else if (line.match(/OnScreenText\s*\(.*\)/)) {
+			} else if (line.match(/OnScreenText\s*\(.*\)./)) {
 				OnScreenText(0);
 			} else if (parent == "OnScreenText") {
 				OnScreenText(1);
-			} else if (line.match(/DateTime\s*\(.*\)/)) {
+			} else if (line.match(/DateTime\s*\(.*\)./)) {
 				dateTimeMethods(0);
 			} else if (parent == "DateTime") {
 				dateTimeMethods(1);
-			} else if (line.match(/TimeSpan\s*\(.*\)/)) {
+			} else if (line.match(/TimeSpan\s*\(.*\)./)) {
 				TimeSpanMethods(0);
 			} else if (parent == "TimeSpan") {
 				TimeSpanMethods(1);
-			} else if (line.match(/Stopwatch\s*\(.*\)/)) {
+			} else if (line.match(/Stopwatch\s*\(.*\)./)) {
 				Stopwatch();
-			} else if (line.match(/Clipboard\s*\(.*\)/)) {
+			} else if (line.match(/Clipboard\s*\(.*\)./)) {
 				Clipboard();
-			} else if (line.match(/Overlay\s*\(.*\)/)) {
+			} else if (line.match(/Overlay\s*\(.*\)./)) {
 				Overlay();
 			} else if (parent == "File") {
 				fileMethods();
@@ -874,7 +933,7 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				cache();
 			} else if (parent == "Env") {
 				env();
-			} else if (line.match(/Version\s*\(.*\)/)) {
+			} else if (line.match(/Version\s*\(.*\)./)) {
 				Version();
 			} else {
 				sysMethods();
@@ -905,17 +964,30 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 			// Get methods for build-in functions
         } else {
 			// Include regular keywords
-			allNames.forEach(name => {
-				intellisense.push({
-					label: name.trim(),
-					kind: CompletionItemKind.Variable,
-					insertText: name.trim(),
-					data: 'varNameIntellisense',
-				});
+			const doc = document?.getText().split("\n");
+			const posInDoc = _textDocumentPosition.position.line;
+			data.forEach(el => {
+				if (el.scope[0] == false || !posInDoc) {
+					intellisense.push({
+						label: el.name.trim(),
+						kind: CompletionItemKind.Variable,
+						insertText: el.name.trim(),
+						data: 'varNameIntellisense',
+					});
+				} else if (typeof el.scope[0] == "number" && typeof el.scope[1] == "number"){
+					if (el.scope[0] <= posInDoc && el.scope[1] >= posInDoc) {
+						intellisense.push({
+							label: el.name.trim(),
+							kind: CompletionItemKind.Variable,
+							insertText: el.name.trim(),
+							data: 'varNameIntellisense',
+						});
+					}
+				}
 			});
 			add(['var'], CompletionItemKind.Variable);
 			add([
-				'Sys', 'fun', 'out', 'in',
+				'Sys', 'fun', 'out', 'in', 'return',
 				'wait', 'swipe', 'click', 'Map', 'Math',
 				'Point', 'SwipePoint', 'MultiSwipe', 'MultiSwipe.builder()',
 				'Touch', 'Region', "Template", 'Setting',
