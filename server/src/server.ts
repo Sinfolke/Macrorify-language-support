@@ -242,7 +242,6 @@ function getKeyword(string:string) {
 	}
 }
 let allNames:Array<string> = [];
-let wasDoWhile = false;
 async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 	data = [];
 	allNames = [];
@@ -387,6 +386,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 		"i = i * i * i... * n");
 		check(str, /\+\+/, /\+\+/, 1, "This increament is not supported.");
 		check(str, /--/, /--/, 1, "This decreament is not supported.");
+		check(str, /(`.*`|'.*')/, /(`.*`|'.*')/, 1, "Unsupported quotes");
 	}
 	function conditionCheck(str:string) {
 		// Empty statement
@@ -394,7 +394,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 		// Statement without brackets
 		check(str, /^\s*if\s*\(.*\)\s*[^{]+$/gm, null, 1, "Statement requires braces after condition");
 		check(str, /^\s*do\s*[^{}]+$/, null, 1, "Statement requires braces after condition");
-		if (!wasDoWhile) {
+		if (blocksData[blocksData.length - 1] != "doWhile") {
 			check(str, /^\s*while\s*\(.*\)\s*[^{]+$/gm, null, 1, "Statement requires braces after condition");
 		}
 		// Always true
@@ -468,11 +468,11 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 		check(condition, /^["[\]0-9a-z]+\s*(<!|>!|<=!|>=!)\s*["[\]0-9a-z]+\s*$/, /(<!|>!|<=!|>=!)/, 1, "Operators are fully incorrect");
 	}
 	// Run all checks
-	let inBlock = false;
-	let funBeginIn = 0;
-	let blcBeginIn = 0;
-	let funEndInWaiters = [];
-	let blcEndInWaiters = [];
+	const funBeginIn:Array<number> = [];
+	const blcBeginIn:Array<number> = [];
+	const funEndInWaiters:Array<Array<number>> = [];
+	const blcEndInWaiters:Array<Array<number>> = [];
+	const blocksData:Array<string> = [];
 	for (const str of strings) {
 		checkIndex++;
 		if (str.replace(/ /g, "").startsWith("//") || strings[strings.length - 1] == str) {
@@ -483,43 +483,38 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 			notClogged = notClogged.slice(0, notClogged.indexOf("//"));
 		}
 		if (notClogged.startsWith("fun")) {
-			funBeginIn = checkIndex;
-			// Get parameters as variables
-			const name = notClogged.slice(notClogged.indexOf("(") + 1, notClogged.indexOf(")")).trim().split(",");
-			name.forEach(parameter => {
-				data.push({ name: parameter, type: "any", wasUsed: false, scope: [funBeginIn + 1]});
-				funEndInWaiters.push(data.length - 1);
+			funEndInWaiters.push([]);
+			funBeginIn.push(checkIndex);
+			const parameters = notClogged.slice(notClogged.indexOf("(") + 1, notClogged.indexOf(")")).trim().split(",");
+			parameters.forEach(parameter => {
+				data.push({ name: parameter, type: "any", wasUsed: false, scope: [checkIndex]});
+				funEndInWaiters[funEndInWaiters.length - 1].push(data.length - 1);
 				allNames.push(parameter);
 			});
-		} else if (notClogged.trim().includes("do")) {
-			wasDoWhile = true;
-			blcBeginIn = checkIndex;
-		} else if (notClogged.includes("{")) {
-			inBlock = true;
-			blcBeginIn = checkIndex;
-		} 
+			blocksData.push("fun");
+		} else if (notClogged.includes("do") || notClogged.includes("{")) {
+			blcEndInWaiters.push([]);
+			blcBeginIn.push(checkIndex);
+			blocksData.push(notClogged.includes("do") ? "doWhile" : "Block");
+		}
 		if (notClogged.includes("}")) {
-			if (wasDoWhile) {
-				wasDoWhile = false;
-				const endIn = checkIndex;
-				blcEndInWaiters.forEach(num => {
-					data[num].scope[1] = endIn;
+			const lastBl = blocksData[blocksData.length - 1];
+			if (lastBl == "doWhile" || lastBl == "Block") {
+				const lastBlc = blcEndInWaiters[blcEndInWaiters.length - 1]; 
+				lastBlc.forEach(num => {
+					data[num].scope[1] = checkIndex;
 				});
-				blcBeginIn = 0, blcEndInWaiters = [];
-			} else if (inBlock) {
-				inBlock = false;
-				const endIn = checkIndex;
-				blcEndInWaiters.forEach(num => {
-					data[num].scope[1] = endIn;
-				});
-				blcBeginIn = 0, blcEndInWaiters = [];
+				blcEndInWaiters.pop();
+				blcBeginIn.pop();
 			} else {
-				const endIn = checkIndex;
-				funEndInWaiters.forEach(num => {
-					data[num].scope[1] = endIn;
+				const lastFun = funEndInWaiters[funEndInWaiters.length - 1];
+				lastFun.forEach(num => {
+					data[num].scope[1] = checkIndex;
 				});
-				funBeginIn = 0, funEndInWaiters = [];
+				funBeginIn.pop();
+				funEndInWaiters.pop();
 			}
+			blocksData.pop();
 		}
 		if (notClogged.trim().startsWith("var")) {
 			let name, type, value;
@@ -536,16 +531,18 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 			if (allNames.includes(name)) {
 				data[allNames.indexOf(name)].type = type;
 			} else {
-				if (blcBeginIn || funBeginIn) {
-					data.push({ name: name, type: type, wasUsed: false, scope: [inBlock ? blcBeginIn : funBeginIn]});
+				allNames.push(name);
+				if (blocksData.length > 0) {
+					const last = blocksData[blocksData.length - 1];
+					if (last == "Block" || last == "doWhile") {
+						data.push({ name: name, type: type, wasUsed: false, scope: [blcBeginIn[blcBeginIn.length - 1]]});
+						blcEndInWaiters[blcEndInWaiters.length - 1].push(data.length - 1);
+					} else if (last == "fun") {
+						data.push({ name: name, type: type, wasUsed: false, scope: [funBeginIn[funBeginIn.length - 1]]});
+						funEndInWaiters[funEndInWaiters.length - 1].push(data.length - 1);
+					}
 				} else {
 					data.push({ name: name, type: type, wasUsed: false, scope: [false]});
-				}
-				allNames.push(name);
-				if (wasDoWhile || inBlock) {
-					blcEndInWaiters.push(data.length - 1);
-				} else {
-					funEndInWaiters.push(data.length - 1);
 				}
 			}
 		}
