@@ -143,6 +143,7 @@ interface data {
 let data: data[] = [
 	// [name:string, type:number/string/array/boolean/null/any, declaredInFunction: boolean, wasUsed: boolean]
 ];
+let functions:Array<string> = [];
 function typeCheck(value:string) {
 	let type;
 	if (value.startsWith('"')) {
@@ -245,6 +246,7 @@ let allNames:Array<string> = [];
 async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 	data = [];
 	allNames = [];
+	functions = [];
 	let checkIndex = -1;
 	const settings = await getDocumentSettings(textDocument.uri);
 	const text = textDocument.getText();
@@ -292,9 +294,6 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 	function varCheck(str:string) {
 		// Defines single "var" keyword
 		check(str, /\b(var)\b\s*[;]*\s*$/, null, 1, "Single declaration keyword");
-		// Variable name begins from wrong letter
-		check(str, /^var\s+(?=[^a-z-A-Z]).*$/gm, null, 1, "Incorrect name. It should begin from regular letter");
-		
 		// Defines let keyword
 		check(str, /(?<!var\s)let\b/, null, 1,
 		"'let' declaration isn't supported. Use 'var' instead - it has the same properties.");
@@ -386,7 +385,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 		"i = i * i * i... * n");
 		check(str, /\+\+/, /\+\+/, 1, "This increament is not supported.");
 		check(str, /--/, /--/, 1, "This decreament is not supported.");
-		check(str, /(`.*`|'.*')/, /(`.*`|'.*')/, 1, "Unsupported quotes");
+		check(str, /(`.*`|'.*')/, null, 1, "Unsupported quotes");
 	}
 	function conditionCheck(str:string) {
 		// Empty statement
@@ -422,7 +421,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 		// skipped name
 		check(str, /\s*(fun|class)\s*\(/, /\s*\(/, 1, `Skipped ${name} name`);
 		// Incorrect name
-		check(str, /\s*(fun|class)\s+([^A-Za-z_]|[^A-Za-z_][\w]|[A-Za-z_][^\w])*\s*\(.*/, /((?<=fun\s*)|(?<=class\s*))(.*?)\s*\(/, 1,
+		check(str, /\s*(fun|class)\s+([^A-Za-z_]|[^A-Za-z_][\w]+|[A-Za-z_][^\w]+)*\s*\(.*/, /((?<=fun\s*)|(?<=class\s*))(.*?)\s*\(/, 1,
 		`Incorrect ${name} name. It can include only text characters, numbers or '_' and must starts with text character`);
 		// Function without block declaration
 		check(str, /^\s*(fun|class)\s*.*\(.*\)\s*[^{]+$/, /\).*/, 1, "Block declaration expected");
@@ -486,6 +485,8 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 			funEndInWaiters.push([]);
 			funBeginIn.push(checkIndex);
 			const parameters = notClogged.slice(notClogged.indexOf("(") + 1, notClogged.indexOf(")")).trim().split(",");
+			const funName = notClogged.slice(notClogged.indexOf("fun") + 3, notClogged.indexOf("("));
+			functions.push(funName);
 			parameters.forEach(parameter => {
 				data.push({ name: parameter, type: "any", wasUsed: false, scope: [checkIndex]});
 				funEndInWaiters[funEndInWaiters.length - 1].push(data.length - 1);
@@ -576,19 +577,11 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 	// Check whether a user declares variable
 	const newL = line?.replace(/ /g, "");
 	if (newL?.startsWith('var') && !newL.includes("=")) {
-		return intellisense;
+		return [];
 	}
 	// Check for lines that shouldn't get intellisense
 	if (line?.replace(/ /g, "").startsWith("//") || /['"][^'"]*$/.test(line || "")) {
 		return [];
-	}
-	function getNameOfElement(str: string): string {
-		// Split the string based on "."
-		const splittedStr = str.split(".");
-		
-		// The first element of the splittedStr array is the name of the element 
-		const nameOfElement = splittedStr[splittedStr.length - 2].trim();
-		return nameOfElement;
 	}
 	function add(arr:Array<any>, type:CompletionItemKind) {
 		for (let i = 0; i < arr.length; i++) {
@@ -957,11 +950,13 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 					regionMethods(i);
 					settingMethods(i);
 				}
+				arrayMethods();
+				stringMethods();
+				numberMethods();
 			}
 			// Get methods for build-in functions
         } else {
 			// Include regular keywords
-			const doc = document?.getText().split("\n");
 			const posInDoc = _textDocumentPosition.position.line;
 			data.forEach(el => {
 				if (el.scope[0] == false || !posInDoc) {
@@ -981,6 +976,14 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 						});
 					}
 				}
+			});
+			functions.forEach(fun => {
+				intellisense.push({
+					label: fun.trim(),
+					kind: CompletionItemKind.Function,
+					insertText: `${fun.trim()}()`,
+					data: 'funNameIntellisense',
+				});
 			});
 			add(['var'], CompletionItemKind.Variable);
 			add([
@@ -1101,20 +1104,39 @@ type HintsDoc = {
 		"Classes are made to contain specific variables and their values, usually also methods to manage with them",
 		"No explanation here as because you should understand classes work to use (and better learn not via vscode hints)",
 	]],
-	// METHODS
-	push: ["Push method for arrays", [
+	// Array methods
+	push: ["Array's methods", [
 		"Push method adds to end of an array specified value",
 		"\tvar arr = [1, 2, 3]",
 		"\tarr.push(4)",
 		"\tSys.alert(arr) // [1, 2, 3, 4]",
 	]],
-	// SYS METHODS
+	pop: ["Array's methods", [
+		"Pop method removes last value from an array",
+		"\tvar arr = [1, 2, 3]",
+		"\tarr.pop()",
+		"\tSys.alert(arr) // [1, 2]",
+	]],
+	shift: ["Array's methods", [
+		"Shift method removes first element from an array",
+		"\tvar arr = [1, 2, 3]",
+		"\tarr.shift()",
+		"\tSys.alert(arr) // [2, 3]",
+	]],
+	unshift: ["Array's methods", [
+		"Unshift method adds specified value to a first index of an array",
+		"\tvar arr = [1, 2, 3]",
+		"\tarr.unshift(0)",
+		"\tSys.alert(arr) // [0, 1, 2, 3]",
+	]],
+	// Sys methods
 	alert: ["Outputs a message", [
 		"Sys.alert(\"hello\");",
 		"This will create a message for user with the specified content.",
 	]],
 	// Variable names intellisense
-	varNameIntellisense: ["Variable", [""]],
+	varNameIntellisense: ["Variable", ["This variable was declared in the code."]],
+	funNameIntellisense: ["Function", ["This function was declared in the code."]],
   };
   
 connection.onCompletionResolve((item: CompletionItem): CompletionItem => {
