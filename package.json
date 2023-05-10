@@ -20,17 +20,20 @@
 	"contributes": {
 		"languages": [{
 			"id": "macrorify",
-			"aliases": ["Macrorify EMS Syntax"],
+			"aliases": ["Macrorify"],
 			"extensions": [".macr",".macrorify"],
-			"configuration": "./highlight/language-configuration.json"
+			"configuration": "./highlight/language-configuration.json",
+			"icon": {
+				"light": "./icon.png",
+				"dark": "./icon.png"
+			  }
 		  }],
 		  "grammars": [{
 			"language": "macrorify",
 			"scopeName": "source.macrorify",
 			"path": "./highlight/macrorify.tmLanguage.json"
 		  }],
-		  "snippets": [
-			{
+		  "snippets": [{
 			  "language": "macrorify",
 			  "path": "./snippets.json"
 			}

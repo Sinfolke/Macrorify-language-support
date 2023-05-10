@@ -17,8 +17,9 @@ import {
 	InitializeResult,
 } from "vscode-languageserver/node";
 import { Position, TextDocument } from "vscode-languageserver-textdocument";
+import { type } from 'os';
 
-  
+
   // Create a connection for the server, using Node's IPC as a transport.
   // Also include all preview / proposed LSP features.
   const connection = createConnection(ProposedFeatures.all);
@@ -66,7 +67,6 @@ import { Position, TextDocument } from "vscode-languageserver-textdocument";
 	}
 	return result;
   });
-
 connection.onInitialized(() => {
 	if (hasConfigurationCapability) {
 		// Register for all configuration changes.
@@ -137,13 +137,17 @@ documents.onDidChangeContent(change => {
 interface data {
 	name: string;
 	type: string;
-	scope: Array<number | boolean>;
+	scope: Array<number>;
 	wasUsed: boolean;
+	value: string;
+	reassignValue: Array<string>;
+	reassignType: Array<string>
   }
 let data: data[] = [
-	// [name:string, type:number/string/array/boolean/null/any, declaredInFunction: boolean, wasUsed: boolean]
+
 ];
 let functions:Array<string> = [];
+let classes:Array<string> = [];
 function typeCheck(value:string) {
 	let type;
 	if (value.startsWith('"')) {
@@ -152,6 +156,10 @@ function typeCheck(value:string) {
 		type = "[]";
 	} else if (Number(value.slice(0, 1)) || value.slice(0, 1) == "0") {
 		type = "1";
+	} else if (value.slice(0, 4) == "true" || value.slice(0, 5) == "false") {
+		type = "boolean";
+	} else if (value.slice(0, 4) == "null") {
+		type = "null";
 	} else {
 		const keyword = getKeyword(value);
 		type = keyword ? keyword : "any";
@@ -247,6 +255,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 	data = [];
 	allNames = [];
 	functions = [];
+	classes = [];
 	let checkIndex = -1;
 	const settings = await getDocumentSettings(textDocument.uri);
 	const text = textDocument.getText();
@@ -271,7 +280,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 			if (MatchToEmphasize != null) {
 				const matchFound = MatchToEmphasize.exec(str);
 				if (matchFound) {
-				emphasize = matchFound;
+					emphasize = matchFound;
 				}
 			}
 			const diagnostic: Diagnostic = {
@@ -280,7 +289,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 				start: textDocument.positionAt(text.indexOf(strings[checkIndex]) + strings[checkIndex].indexOf(str) + emphasize.index),
 				end: textDocument.positionAt(text.indexOf(strings[checkIndex]) + strings[checkIndex].indexOf(str) + emphasize.index + emphasize[0].length),
 				},
-				message: `${diagnosticMessage}`,
+				message: diagnosticMessage,
 				source: 'macr, macrorify',
 			};
 
@@ -325,7 +334,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 					const splitted = sliced.split(sliced.includes("+") ? "+" : ".");
 					for (let i = 0; i < allNames.length; i++) {
 						for (let j = 0; j < splitted.length; j++) {
-							if (splitted[j].trim() == allNames[i].trim()) {
+							if (splitted[j].trim() == allNames[i].trim() || splitted[j].trim() == functions[j].trim()) {
 								wasVarName = true;
 								break;
 							}
@@ -336,12 +345,15 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 						if (sliced.trim() == allNames[i].trim()) {
 							wasVarName = true;
 							break;
+						} else if (functions && sliced.includes(functions[i]) && sliced.match(/\(.*\)/)) {
+							wasVarName = true;
+							break;
 						}
 					}
 				}
 				if (!wasVarName) {
 					check(str, dataCheckRegex, 
-					null, 1, "Incorrect data type assigned. It's not variable, keyword, boolean, string, number, array or null.");
+					null, 1, "Incorrect data type assigned. It's not variable, boolean, string, number, array, called function or null.");
 				}	
 			}
 		}
@@ -389,29 +401,35 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 	}
 	function conditionCheck(str:string) {
 		// Empty statement
-		check(str, /^\s*(if|while)\s*\(\)\s*\{.*\}?\s*$/gm, null, 1, "Empty condition");
+		check(str, /^\s*(if|else\s*if|while)\s*\(\)\s*\{.*\}?\s*$/gm, null, 1, "Empty condition");
 		// Statement without brackets
-		check(str, /^\s*if\s*\(.*\)\s*[^{]+$/gm, null, 1, "Statement requires braces after condition");
-		check(str, /^\s*do\s*[^{}]+$/, null, 1, "Statement requires braces after condition");
+		check(str, /^\s*((if|else\s*if)\s*\(.*\)|do)\s*[^{]+$/gm, null, 1, "Statement requires braces after condition");
+		// check(str, /^\s*do\s*[^{}]+$/, null, 1, "Statement requires braces after condition");
 		if (blocksData[blocksData.length - 1] != "doWhile") {
 			check(str, /^\s*while\s*\(.*\)\s*[^{]+$/gm, null, 1, "Statement requires braces after condition");
 		}
+		// check whether a condition is not single
+		const sliced = str.slice(str.indexOf("(") + 1, str.indexOf(")"));
+		if (sliced.match(/[^!a-z-A-Z()_0-9]/)) {
+			// Condition is not single
+			check(str, /\s*(if|else\s*if|while)\s*\(([^a-zA-Z/*!+\-=()\s]+|[a-zA-Z0-9\s]+[^a-zA-Z/*!+\-=()\s]+|[^a-zA-Z0-9\s]+[a-zA-Z/*!+\-=()\s]+)\).*/, null, 1, "Incorrect left side of condition");
+			check(str, /^\s*(if|else\s*if|while)\s*\(\s*\w+\s*(>|<|>=|<=|==|!=|\*|\/|\+|-)\s*([^a-z-A-Z0-9]|[a-z-A-Z0-9]+[^a-z-A-Z\s]+|[^a-z-A-Z0-9\s]+[a-z-A-Z\s]*)\).*/, null, 1, "Incorrect right side of condition");
+		}
 		// Always true
-		check(str, /\s*if\s*\(\s*(true|[1-9][0-9]*|-[1-9][0-9]*)\s*\).*/g, /(\s*.*\s*)/, 0, "Condition is always true and doesn't have any sense");
-		check(str, /\s*while\s*\(\s*(true|[1-9][0-9]*|-[1-9][0-9]*)\s*\).*/g, /(\s*.*\s*)/, 1, "Condition is always true and will cause infinity loop");
+		check(str, /\s*if\s*\(\s*(true|[1-9][0-9]*|-[1-9][0-9]*)\s*\).*/g, /(true|[1-9][0-9]*|-[1-9][0-9]*)\s*\)/, 0, "Condition is always true and doesn't have any sense");
+		check(str, /\s*while\s*\(\s*(true|[1-9][0-9]*|-[1-9][0-9]*)\s*\).*/g, /(true|[1-9][0-9]*|-[1-9][0-9]*)\s*\)/, 1, "Condition is always true and will cause infinity loop");
 		// Always false
-		check(str, /\s*(if|while)\s*\(\s*(false|[0]+|""|null)\s*\).*/g, /false/, 0, "Condition is always false and will never be executed");
+		check(str, /\s*(if|else\s*if|while)\s*\(\s*(false|[0]+|""|null)\s*\).*/g, /(false|[0]+|""|null)/, 0, "Condition is always false and will never be executed");
 		// Only one equal sign
-		check(str, /\s*(if|while)\s*\(\s*["[\]0-9a-z]+\s*=\s*["[\]0-9a-z]+\s*\)/, /=/, 1, "'=' or '!' excepted.");
+		check(str, /\s*(if|else\s*if|while)\s*\(\s*["[\]0-9a-z]+\s*=\s*["[\]0-9a-z]+\s*\)/, /=/, 1, "'=' or '!' excepted.");
 		// Includes !>
-		check(str, /\s*(if|while)\s*\(\s*["[\]0-9a-z]+\s*!>\s*["[\]0-9a-z]+\s*\)/, /!>/, 1, "Use <= instead");
+		check(str, /\s*(if|else\s*if|while)\s*\(\s*["[\]0-9a-z]+\s*!>\s*["[\]0-9a-z]+\s*\)/, /!>/, 1, "Use <= instead");
 		// Includes !<
-		check(str, /\s*(if|while)\s*\(\s*["[\]0-9a-z]+\s*!<\s*["[\]0-9a-z]+\s*\)/, /!</, 1, "Use >= instead");
+		check(str, /\s*(if|else\s*if|while)\s*\(\s*["[\]0-9a-z]+\s*!<\s*["[\]0-9a-z]+\s*\)/, /!</, 1, "Use >= instead");
 		// Includes =!
-		check(str, /\s*(if|while)\s*\(\s*["[\]0-9a-z]+\s*=!\s*["[\]0-9a-z]+\s*\)/, /!</, 1, "Move '!' before '='");
+		check(str, /\s*(if|else\s*if|while)\s*\(\s*["[\]0-9a-z]+\s*=!\s*["[\]0-9a-z]+\s*\)/, /!</, 1, "Move '!' before '='");
 		// Includes <!
-		check(str, /\s*(if|while)\s*\(\s*["[\]0-9a-z]+\s*(<!|>!|<=!|>=!)\s*["[\]0-9a-z]+\s*\)/, /!</, 1, "Operators are fully incorrect");
-		check(str, /\s*(if|while)\s*\(\s*["[\]0-9a-z]+\s*(>|<|>=|<=|!=|==)\s*\1\s*\)/, /!</, 1, "Operators are fully incorrect");
+		check(str, /\s*(if|else\s*if|while)\s*\(\s*["[\]0-9a-z]+\s*(<!|>!|<=!|>=!)\s*["[\]0-9a-z]+\s*\)/, /!</, 1, "Operators are fully incorrect");
 	}
 	function funClassCheck(str:string) {
 		const name = str.includes('fun') ? "function" : "class";
@@ -467,52 +485,70 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 		check(condition, /^["[\]0-9a-z]+\s*(<!|>!|<=!|>=!)\s*["[\]0-9a-z]+\s*$/, /(<!|>!|<=!|>=!)/, 1, "Operators are fully incorrect");
 	}
 	// Run all checks
-	const funBeginIn:Array<number> = [];
-	const blcBeginIn:Array<number> = [];
 	const funEndInWaiters:Array<Array<number>> = [];
+	const classEndInWaiters:Array<Array<number>> = [];
 	const blcEndInWaiters:Array<Array<number>> = [];
 	const blocksData:Array<string> = [];
 	for (const str of strings) {
 		checkIndex++;
-		if (str.replace(/ /g, "").startsWith("//") || strings[strings.length - 1] == str) {
+		if (str.replace(/ /g, "").startsWith("//")) {
 			continue;
 		}
 		let notClogged = str.replace(/"[^"]*"/g, "");
 		if (notClogged.includes("//")) {
 			notClogged = notClogged.slice(0, notClogged.indexOf("//"));
 		}
-		if (notClogged.startsWith("fun")) {
+		if (notClogged.includes("fun")) {
 			funEndInWaiters.push([]);
-			funBeginIn.push(checkIndex);
 			const parameters = notClogged.slice(notClogged.indexOf("(") + 1, notClogged.indexOf(")")).trim().split(",");
 			const funName = notClogged.slice(notClogged.indexOf("fun") + 3, notClogged.indexOf("("));
 			functions.push(funName);
 			parameters.forEach(parameter => {
-				data.push({ name: parameter, type: "any", wasUsed: false, scope: [checkIndex]});
+				data.push({ 
+					name: parameter, type: "any", wasUsed: false, scope: [checkIndex], value: "", 
+					reassignValue: [], reassignType: []
+				});
 				funEndInWaiters[funEndInWaiters.length - 1].push(data.length - 1);
 				allNames.push(parameter);
 			});
 			blocksData.push("fun");
-		} else if (notClogged.includes("do") || notClogged.includes("{")) {
+		} else if (notClogged.includes("class")) {
+			classEndInWaiters.push([]);
+			const parameters = notClogged.slice(notClogged.indexOf("(") + 1, notClogged.indexOf(")")).trim().split(",");
+			const className = notClogged.slice(notClogged.indexOf("class") + 5, notClogged.indexOf("("));
+			classes.push(className);
+			parameters.forEach(parameter => {
+				data.push({ 
+					name: parameter, type: "any", wasUsed: false, scope: [checkIndex], value: "", 
+					reassignValue: [], reassignType: []
+				});
+				classEndInWaiters[classEndInWaiters.length - 1].push(data.length - 1);
+				allNames.push(parameter);
+			});
+			blocksData.push("class");
+		} else if (notClogged.includes("{")) {
 			blcEndInWaiters.push([]);
-			blcBeginIn.push(checkIndex);
 			blocksData.push(notClogged.includes("do") ? "doWhile" : "Block");
 		}
 		if (notClogged.includes("}")) {
 			const lastBl = blocksData[blocksData.length - 1];
 			if (lastBl == "doWhile" || lastBl == "Block") {
-				const lastBlc = blcEndInWaiters[blcEndInWaiters.length - 1]; 
-				lastBlc.forEach(num => {
+				const last = blcEndInWaiters[blcEndInWaiters.length - 1]; 
+				last.forEach(num => {
 					data[num].scope[1] = checkIndex;
 				});
 				blcEndInWaiters.pop();
-				blcBeginIn.pop();
-			} else {
-				const lastFun = funEndInWaiters[funEndInWaiters.length - 1];
-				lastFun.forEach(num => {
+			} else if (lastBl == "class") {
+				const last = classEndInWaiters[classEndInWaiters.length - 1];
+				last.forEach(num => {
 					data[num].scope[1] = checkIndex;
 				});
-				funBeginIn.pop();
+				classEndInWaiters.pop();
+			} else {
+				const last = funEndInWaiters[funEndInWaiters.length - 1];
+				last.forEach(num => {
+					data[num].scope[1] = checkIndex;
+				});
 				funEndInWaiters.pop();
 			}
 			blocksData.pop();
@@ -533,26 +569,50 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 				data[allNames.indexOf(name)].type = type;
 			} else {
 				allNames.push(name);
-				if (blocksData.length > 0) {
-					const last = blocksData[blocksData.length - 1];
-					if (last == "Block" || last == "doWhile") {
-						data.push({ name: name, type: type, wasUsed: false, scope: [blcBeginIn[blcBeginIn.length - 1]]});
-						blcEndInWaiters[blcEndInWaiters.length - 1].push(data.length - 1);
-					} else if (last == "fun") {
-						data.push({ name: name, type: type, wasUsed: false, scope: [funBeginIn[funBeginIn.length - 1]]});
-						funEndInWaiters[funEndInWaiters.length - 1].push(data.length - 1);
-					}
-				} else {
-					data.push({ name: name, type: type, wasUsed: false, scope: [false]});
+			}
+			data.push({ 
+				name: name, type: type, wasUsed: false, scope: [checkIndex], value: value ? value : "", 
+				reassignValue: [], reassignType: []
+			});
+			if (blocksData.length > 0) {
+				const last = blocksData[blocksData.length - 1];
+				if (last == "Block" || last == "doWhile") {
+					blcEndInWaiters[blcEndInWaiters.length - 1].push(data.length - 1);
+				} else if (last == "fun") {
+					funEndInWaiters[funEndInWaiters.length - 1].push(data.length - 1);
+				} else if (last == "class") {
+					classEndInWaiters[classEndInWaiters.length - 1].push(data.length - 1);
 				}
 			}
+		} else {
+			data.forEach((el, id) => {
+				const trimmed = notClogged.replace(/\s/g, "");
+				connection.console.log(`${trimmed}, includes spaces: ${trimmed.includes(" ")}`);
+				connection.console.log(`${el.name.trim()}, includes spaces: ${el.name.trim().includes(" ")}`);
+				connection.console.log(`${trimmed.includes(`${el.name.trim()}=`)}`);
+				if (trimmed.trim().includes(`${el.name.trim()}=`) && !trimmed.includes("==")) {
+					const newValue = notClogged.slice(notClogged.indexOf("=") + 1).replace(/;/g, "").trim();
+					let newType = typeCheck(newValue);
+					if (newType == "[]") {
+						newType = "array";
+					} else if (newType == "1") {
+						newType = "number";
+					} else if (newType == '"string"') {
+						newType = "string";
+					}
+					data[id].reassignValue.push(newValue);
+					data[id].reassignType.push(newType);
+				}
+			});
 		}
-		semicolonCheck(notClogged);
-		varCheck(notClogged);
-		conditionCheck(notClogged);
-		commonExpressionCheck(notClogged);
-		funClassCheck(notClogged);
-		forCheck(notClogged);
+		if (strings[strings.length - 1] != str) {
+			semicolonCheck(notClogged);
+			varCheck(notClogged);
+			conditionCheck(notClogged);
+			commonExpressionCheck(notClogged);
+			funClassCheck(notClogged);
+			forCheck(notClogged);
+		}
 	}
 	if (diagnostics.length > 0) {
 		connection.sendDiagnostics({ uri: textDocument.uri, diagnostics});
@@ -842,6 +902,10 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 						for (let j = 0; j < unconstructed.length; j++) {
 							if (unconstructed[j].trim() == data[i].name.trim()) {
 								unconstructed[j] = data[i].type;
+							} else if (unconstructed[j].includes("(")) {
+								if (unconstructed[j].slice(0, unconstructed[j].indexOf("(")).trim() == data[i].name.trim()) {
+									unconstructed[j] = `${data[i].type}()`;
+								}
 							}
 						}
 					}
@@ -887,7 +951,7 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				regionMethods(3);
 			} else if (line?.match(/\s*Region\s*\(.*\).(find|findMulti|findAll|findAny)\s*\(.*\)./)) { // Region with brackets
 				regionMethods(2);
-			} else if (line.match(/\s*Region\s*\(.*\).$/)) { // Region with brackets
+			} else if (line.match(/\s*Region\s*\(.*\)./)) { // Region with brackets
 				regionMethods(1);
 			} else if (parent == "Template") { // Region with brackets
 				TemplateMethods(0);
@@ -938,6 +1002,9 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				cache();
 				env();
 				Version();
+				arrayMethods();
+				stringMethods();
+				numberMethods();
 				for (let i = 0; i < 2; i++) {
 					pointMethods(i);
 					multiSwipeMethods(i);
@@ -950,32 +1017,27 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 					regionMethods(i);
 					settingMethods(i);
 				}
-				arrayMethods();
-				stringMethods();
-				numberMethods();
 			}
 			// Get methods for build-in functions
         } else {
 			// Include regular keywords
 			const posInDoc = _textDocumentPosition.position.line;
-			data.forEach(el => {
-				if (el.scope[0] == false || !posInDoc) {
+			data.forEach((el, id) => {
+				if (!posInDoc) {
 					intellisense.push({
 						label: el.name.trim(),
 						kind: CompletionItemKind.Variable,
 						insertText: el.name.trim(),
-						data: 'varNameIntellisense',
+						data: [`varNameIntellisense`, id],
 					});
-				} else if (typeof el.scope[0] == "number" && typeof el.scope[1] == "number"){
-					if (el.scope[0] <= posInDoc && el.scope[1] >= posInDoc) {
+				} else if (el.scope[0] <= posInDoc && (el.scope[1] == undefined || el.scope[1] >= posInDoc)) {
 						intellisense.push({
 							label: el.name.trim(),
 							kind: CompletionItemKind.Variable,
 							insertText: el.name.trim(),
-							data: 'varNameIntellisense',
+							data: [`varNameIntellisense`, id],
 						});
 					}
-				}
 			});
 			functions.forEach(fun => {
 				intellisense.push({
@@ -987,16 +1049,16 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 			});
 			add(['var'], CompletionItemKind.Variable);
 			add([
-				'Sys', 'fun', 'out', 'in', 'return',
+				'Sys', 'fun', 'out', 'in',
 				'wait', 'swipe', 'click', 'Map', 'Math',
-				'Point', 'SwipePoint', 'MultiSwipe', 'MultiSwipe.builder()',
+				'Point', 'SwipePoint', 'MultiSwipe',
 				'Touch', 'Region', "Template", 'Setting',
 				'OnScreenText', 'DateTime', 'TimeSpan',
 				'Stopwatch', 'Clipboard', 'Overlay',
 				'File', "Cache", "Env", "Version"
 			], CompletionItemKind.Function);
 			add(['class'], CompletionItemKind.Class);
-			add(['if', 'while', 'do','for'], CompletionItemKind.Keyword);
+			add(['if', 'while', 'do', 'for', 'return'], CompletionItemKind.Keyword);
 		}
         return intellisense;
     }
@@ -1006,16 +1068,8 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 // the completion list.
 type HintsDoc = {
 	[key: string]: [string, string[]];
-  };
-  
-  function compileArray(arr: string[]): string {
-	let str = "";
-	arr.forEach(el => {
-		str += `${el}\n`;
-	});
-	return str;
-  }
-  const hintsDoc: HintsDoc = {
+};
+const hintsDoc: HintsDoc = {
 	// REGULAR KEYWORDS
 	var: ["Variable declaration", [
 		"Declare variable",
@@ -1135,16 +1189,45 @@ type HintsDoc = {
 		"This will create a message for user with the specified content.",
 	]],
 	// Variable names intellisense
-	varNameIntellisense: ["Variable", ["This variable was declared in the code."]],
 	funNameIntellisense: ["Function", ["This function was declared in the code."]],
-  };
-  
+};
 connection.onCompletionResolve((item: CompletionItem): CompletionItem => {
-	if (item.data in hintsDoc) {
+	if (item.data instanceof Array && item.data[0] == "varNameIntellisense") {
+		const info = data[item.data[1]];
+		const doc = [];
+		item.detail = `Variable: ${info.name}`;
+		console.log(info.scope[1]);
+		doc.push((`Scope: from ${info.scope[0] + 1}`));
+		if (info.scope[1]) {
+			doc[doc.length - 1] += (` to ${info.scope[1] + 1}`);
+		}
+		if (info.type == "[]") {
+			doc.push(`Type: array`);
+		} else if (info.type == '"string"') {
+			doc.push(`Type: string`);
+		} else if (info.type == "1") {
+			doc.push(`Type: number`);
+		} else {
+			doc.push(`Type: ${info.type}`);
+		}
+		if (info.value == "") {
+			doc.push("Value is not assigned on declaration");
+		} else {
+			doc.push(`Value on declaration: ${info.value}`);
+		}
+		connection.console.log(`reassing array: ${info.reassignValue.join("\n")}`);
+		if (info.reassignValue[0]) {
+			doc.push("Possibly reassigned during code: ");
+			info.reassignValue.forEach((value, id) => {
+				doc.push(`${value} with type: ${info.reassignType[id]}`);
+			});
+		}
+		item.documentation = doc.join("\n");
+	} else if (item.data in hintsDoc) {
 		const detail = hintsDoc[item.data][0];
 		const doc = hintsDoc[item.data][1];
 		item.detail = detail ? detail : "no info";
-		item.documentation = doc ? compileArray(doc) : "no info";
+		item.documentation = doc ? doc.join("\n") : "no info";
 	} else {
 		item.detail = "no info";
 		item.documentation = " ";

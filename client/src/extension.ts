@@ -33,7 +33,7 @@ export function activate(context: ExtensionContext) {
 
 	// Options to control the language client
 	const clientOptions: LanguageClientOptions = {
-		// Register the server for plain text documents
+		// Register the server for macrorify language
 		documentSelector: [{ scheme: 'file', language: 'macrorify' }],
 		synchronize: {
 			// Notify the server about file changes to '.clientrc files contained in the workspace
