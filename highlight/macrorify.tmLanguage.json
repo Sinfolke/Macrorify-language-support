@@ -1,9 +1,4 @@
 {
-	"information_for_contributors": [
-		"This file has been converted from https://github.com/microsoft/TypeScript-TmLanguage/blob/master/TypeScriptReact.tmLanguage",
-		"If you want to provide a fix or improvement, please create a pull request against the original repository.",
-		"Once accepted there, we are happy to receive an update request."
-	],
 	"version": "https://github.com/microsoft/TypeScript-TmLanguage/commit/e0aefd8205cc9d1bc7859cc5babbee0d833dca0f",
 	"name": "Macrorify",
 	"scopeName": "source.macrorify",
@@ -41,9 +36,6 @@
 		  },
 		  {
 			"include": "#decl-block"
-		  },
-		  {
-			"include": "#label"
 		  },
 		  {
 			"include": "#expression"
@@ -105,7 +97,7 @@
 							"name": "keyword.control.flow.js"
 						}
 					},
-					"end": "(?=[;}]|$|;|^\\s*$|(?:^\\s*(?:break|class|continue|do|else|fun|for|if|namespace|return|type|var|while)\\b))",
+					"end": "(?=[;}]|$|;|^\\s*$|(?:^\\s*(?:break|class|continue|do|else|for|if|namespace|return|type|var|while)\\b))",
 					"patterns": [
 						{
 							"include": "#expression"

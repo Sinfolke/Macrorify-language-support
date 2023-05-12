@@ -1,14 +1,13 @@
 {
 	"name": "macrorify",
-	"description": "A language server example",
-	"author": "Microsoft Corporation",
+	"description": "Extension to make code writing easer and comfortable",
+	"author": "Macrorify user",
 	"license": "MIT",
 	"version": "1.0.0",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/Microsoft/vscode-extension-samples"
+		"url": "https://github.com/Ur-Maso/Macrorify-language-support.git"
 	},
-	"publisher": "vscode-samples",
 	"categories": [],
 	"keywords": [
 		"multi-root ready"
