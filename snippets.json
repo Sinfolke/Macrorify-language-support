@@ -1,5 +1,5 @@
 {
-	"initialize defoult beginning": {
+	"initialize default beginning": {
 		"prefix": "init",
 		"body": [
 			"//\t\t-----------------------------\t\t",
@@ -117,7 +117,7 @@
 	},
 	"for-loop": {
 		"prefix": "for",
-		"body": ["for (var i = ${1:0}; ${2:i < arr.length}; i = i + 1) {\n\t$0\n}"]
+		"body": ["for (var i = ${1:0}; ${2:i < 1}; i = i + 1) {\n\t$0\n}"]
 	},
 	"while-loop": {
 		"prefix": "while",

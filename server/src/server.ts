@@ -144,7 +144,7 @@ interface data {
 	reassignValue: Array<string>;
 	reassignType: Array<string>
 }
-let data: data[] = [];
+export let data: data[] = [];
 let functions:Array<string> = [];
 let classes:Array<string> = [];
 function typeCheck(value:string) {
@@ -190,8 +190,18 @@ function getKeyword(string:string) {
 	string = unconstructed.join(".");
 	if (parent == "Sys") {
 		return "Sys";
-	} else if (parent == "Map") {
-		return "Map";
+	} else if (string.match(/^\s*Sys.info.screen$/)) { // if PointSwipe is with brackets
+		return "Sys.info.screen";
+	} else if (string.match(/^\s*Sys.info.dev$/)) { // if PointSwipe is with brackets
+		return "Sys.info.dev";
+	} else if (string.match(/^\s*Sys.info.battery$/)) { // if PointSwipe is with brackets
+		return "Sys.info.battery";
+	} else if (string.match(/^\s*Sys.info.memory$/)) { // if PointSwipe is with brackets
+		return "Sys.info.memory";
+	} else if (string.match(/^\s*Sys.info$/)) { // if PointSwipe is with brackets
+		return "Sys.info";
+	} else if (string.match(/^\s*Map\s*\(.*\)$/)) {
+		return "Map()";
 	} else if (parent == "Math") {
 		return "Math";
 	} else if (parent == "Point") { // if point without brackets
@@ -238,7 +248,7 @@ function getKeyword(string:string) {
 	} else if (parent == "TimeSpan") {
 		return "TimeSpan";
 	} else if (string.match(/Stopwatch\s*\(.*\)/)) {
-		return "TimeSpan()";
+		return "Stopwatch()";
 	} else if (string.match(/Clipboard\s*\(.*\)/)) {
 		return "Clipboard()";
 	} else if (string.match(/Overlay\s*\(.*\)/)) {
@@ -671,22 +681,17 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 	if (line?.replace(/ /g, "").startsWith("//") || /['"][^'"]*$/.test(line || "")) {
 		return [];
 	}
-	function add(arr:Array<any>, type:CompletionItemKind) {
+	function add(arr:Array<string>, type:CompletionItemKind, group:string) {
+		if (!group) {
+			group = "";
+		}
 		for (let i = 0; i < arr.length; i++) {
-			const splitted = arr[i].split("::");
-			if (splitted.length > 1) {
-				intellisense.push({
-					label: splitted[1],
-					kind: type,
-					data: splitted[2],
-				});
-			} else {
-				intellisense.push({
-					label: arr[i],
-					kind: type,
-					data: arr[i],
-				});
-			}
+			const name = `${group}${arr[i].slice(0, 1).toUpperCase()}${arr[i].slice(1)}`;
+			intellisense.push({
+				label: arr[i],
+				kind: type,
+				data: name,
+			});
 		}
 	}
 	function stringMethods() {
@@ -697,7 +702,7 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 			'matches', 'replace', 'replaceAll', 'split',
 			'subString', 'toLowerCase', 'toUpperCase',
 			'trim', 'join',
-		], CompletionItemKind.Method);
+		], CompletionItemKind.Method, "String");
 	}
 	function arrayMethods() {
 		add([
@@ -705,20 +710,46 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 			'insertAt', 'insertRange', 'removeAt',
 			'removeRange', 'slice', 'concat', 
 			'clear', 'clone',
-		], CompletionItemKind.Method);
+		], CompletionItemKind.Method, "Array");
 	}
-	function numberMethods() {
-		add(['parse'], CompletionItemKind.Method);
+	function NumMethods() {
+		add(['parse'], CompletionItemKind.Method, "Num");
 	}
-	function sysMethods() {
-		add([
-			'alert', 'stop', 'err', 'noti', 
-			'playMedia', 'toast', 'log', 
-			'info', 'currentTime', 
-			'currentVersion', 'sdk',
-			'lang', 'darkMode', 'globalAction',
-			'dpi', 'openApp', 'wake', 
-		], CompletionItemKind.Method);
+	function sysMethods(type:number) {
+		if (type == 0) {
+			add([
+				'alert', 'stop', 'err', 'noti', 
+				'playMedia', 'toast', 'log', 
+				'info', 'currentTime', 
+				'currentVersion', 'sdk',
+				'lang', 'darkMode', 'globalAction',
+				'dpi', 'openApp', 'wake',
+				'setControlOpacity'
+			], CompletionItemKind.Method, "Sys");
+		} else if (type == 1) {
+			add([
+				'dpi', 'state', 'timeout', 'cutouts',
+				'realCutouts', 'insets', 'rotation',
+				'smallestWidth'
+			], CompletionItemKind.Property, "SysInfoScreen");
+		} else if (type == 2) {
+			add([
+				'isEmulator', 'darkmode', 'language', 'sdk',
+				'touch', 'capture'
+			], CompletionItemKind.Property, "SysInfoDev");
+		} else if (type == 3) {
+			add([
+				'level', 'charge', 'ac', 'usb',
+			], CompletionItemKind.Property, "SysInfoBattery");
+		} else if (type == 4) {
+			add([
+				'total', 'free', 'threshold', 'low',
+			], CompletionItemKind.Property, "SysInfoMemory");
+		} else if (type == 5) {
+			add([
+				'dev', 'screen', 'battery', 'memory',
+			], CompletionItemKind.Property, "SysInfo");
+		}
 	}
 	function mapMethods() {
 		add([
@@ -727,7 +758,8 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 			'get', 'put', 'putAll',
 			'putIfAbsent', 'remove',
 			'replace', 'size', 'isEmpty',
-		], CompletionItemKind.Method);
+			'clear::clearMap'
+		], CompletionItemKind.Method, "Map");
 	}
 	function mathMethods() {
 		add([
@@ -737,33 +769,33 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 			'exp', 'pow', 'log', 'log10', 'log1p',
 			'abs', 'max', 'min', 'random', 'toDegrees',
 			'toRadians', 'randomRange'
-		], CompletionItemKind.Method);
+		], CompletionItemKind.Method, "Math");
 	}
 	function pointMethods(type:number) {
 		if (type == 0) {
-			add(['scale'], CompletionItemKind.Method);
-			add(['LEFT', 'TOP', 'RIGHT', 'BOTTOM'], CompletionItemKind.Constant);
+			add(['scale'], CompletionItemKind.Method, "Point");
+			add(['LEFT', 'TOP', 'RIGHT', 'BOTTOM'], CompletionItemKind.Constant, "Point");
 		} else {
-			add(['getX','getY', 'offset', 'noScale'], CompletionItemKind.Method);
+			add(['getX','getY', 'offset', 'noScale'], CompletionItemKind.Method, "Point");
 		}
 	}
 	function SwipePointMethods() {
-		add(['getX','getY', 'getHold', 'getSpeed'], CompletionItemKind.Method);
+		add(['getX','getY', 'getHold', 'getSpeed'], CompletionItemKind.Method, "SwipePoint");
 	}
 	function multiSwipeMethods(type:number) {
 		if (type == 0) {
-			add(['builder'], CompletionItemKind.Method);
+			add(['builder'], CompletionItemKind.Method, "MultiSwipe");
 		} else if (type == 1) {
-			add(['add','setSParam', 'build'], CompletionItemKind.Method);
+			add(['add','setSParam', 'build'], CompletionItemKind.Method, "MultiSwipe");
 		}
 	}
 	function TouchMethods() {
-		add(['down', 'up', 'move', 'dispatch'], CompletionItemKind.Method);
+		add(['down', 'up', 'move', 'dispatch'], CompletionItemKind.Method, "Touch");
 	}
 	function regionMethods(type:number) {
 		if (type == 0) {
-			add(['LEFT', 'TOP', 'RIGHT', 'BOTTOM'], CompletionItemKind.Constant);
-			add(['deviceReg', 'macroReg', 'scale', 'highlightOff'], CompletionItemKind.Method);
+			add(['LEFT', 'TOP', 'RIGHT', 'BOTTOM'], CompletionItemKind.Constant, "Region");
+			add(['deviceReg', 'macroReg', 'scale', 'highlightOff'], CompletionItemKind.Method, "Region");
 		} else if (type == 1) {
 			add([
 				'getX','getY', 'getW', 'getH', 'getMiddlePoint',
@@ -778,18 +810,17 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				'findAnyText', 'clickText', 'clickMultiText', 'clickAllText',
 				'clickAnyText', 'waitText', 'waitAllText', 'highlight', 'highlightOff',
 				'capture', 'read', 'readPlain', 'readAsString', 'readAsNumber'
-			], CompletionItemKind.Method);
-		} else if (type == 2) {
-			add(['getRegion', 'getPoint', 'getScore', 'click'], CompletionItemKind.Method);
-		} else if (type == 3) {
-			add(['getRegion', 'getPoint', 'getText', 'click'], CompletionItemKind.Method);
+			], CompletionItemKind.Method, "Region");
+		} else {
+			add(['getRegion', 'getPoint', 'click', type == 2 ? 'getScore' : 'getText'], CompletionItemKind.Method, "Region");
 		}
+		
 	}
 	function TemplateMethods(type:number) {
 		if (type == 0) {
 			add([
 				'image', 'color', 'text'
-			], CompletionItemKind.Method);
+			], CompletionItemKind.Method, "Template");
 		} else {
 			add([
 				'value', 'mScore', 'method',
@@ -797,7 +828,7 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				'width', 'height', 'scale',
 				'rotate', 'gray', 'threshold', 
 				'build'
-			], CompletionItemKind.Method);
+			], CompletionItemKind.Method, "Template");
 		}
 	}
 	function settingMethods(type:number) {
@@ -806,15 +837,15 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				'get', 'set', 'remove', 'clear',
 				'save', 'loadVars', 'setDialog', 'show',
 				'builder'
-			], CompletionItemKind.Method);
+			], CompletionItemKind.Method, "Setting");
 		} else if (type == 1) {
 			add([
 				'add', 'group', 'groupEnd',
 				'setTitle', 'setPositiveButton',
 				'setNegativeButton', 'build'
-			], CompletionItemKind.Method);
+			], CompletionItemKind.Method, "Setting");
 		} else {
-			add(['show', 'preview'], CompletionItemKind.Method);
+			add(['show', 'preview'], CompletionItemKind.Method, "Setting");
 		}
 	}
 	function OnScreenText(type:number) {
@@ -830,9 +861,9 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				'setBackgroundColor', 'setBackgroundImage',
 				'setTextSize', 'moveable', 'clickable',
 				'resizable', 'noScale', 'show', 'hidden', 'off'
-			], CompletionItemKind.Method);
+			], CompletionItemKind.Method, "OnScreenText");
 		} else {
-			add(['off'], CompletionItemKind.Method);
+			add(['off'], CompletionItemKind.Method, "OnScreenText");
 		}
 	}
 	function dateTimeMethods(type:number) {
@@ -845,11 +876,11 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				'addMonths', 'addDays', 'addHours',
 				'addMinutes', 'addSeconds', 'addMillis',
 				'sub', 'format'
-			], CompletionItemKind.Method);
+			], CompletionItemKind.Method, "dateTime");
 		} else {
 			add([
 				'parse', 'fromUnixMillis', 'timeZoneOffset'
-			], CompletionItemKind.Method);
+			], CompletionItemKind.Method, "dateTime");
 		}
 	}
 	function TimeSpanMethods(type:number) {
@@ -863,12 +894,12 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				'addDays', 'addHours', 'addMinutese',
 				'addSeconds', 'addMillis', 'sub',
 				'mul', 'div', 'format'
-			], CompletionItemKind.Method);
+			], CompletionItemKind.Method, "TimeSpan");
 		} else {
 			add([
 				'fromDays', 'fromHours', 'fromMinutes',
 				'fromSeconds'
-			], CompletionItemKind.Method);
+			], CompletionItemKind.Method, "TimeSpan");
 		}
 	}
 	function Stopwatch() {
@@ -876,29 +907,30 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 			'start', 'stop', 'reset',
 			'restart', 'elapsed',
 			'isRunning', 'isElapsed'
-		], CompletionItemKind.Method);
+		], CompletionItemKind.Method, "Stopwatch");
 	}
 	function Clipboard() {
-		add(['clear', 'copy', 'past',], CompletionItemKind.Method);
+		add(['clear', 'copy', 'past'], CompletionItemKind.Method, "Clipboard");
 	}
 	function Overlay() {
 		add([
 			'setOpacity', 'getState', 'setState',
 			'getRegion', 'move', 'spin'
-		], CompletionItemKind.Method);
+		], CompletionItemKind.Method, "Overlay");
 	}
 	function fileMethods() {
-		add(['writeText', 'writeLines', 'appendText',
+		add([
+		'writeText', 'writeLines', 'appendText',
 		'appendLines', 'readText', 'readLines', 
 		'separator', 'copy', 'delete', 'exists',
 		'isDir', 'mkdirs', 'list'
-		], CompletionItemKind.Method);
+		], CompletionItemKind.Method, "File");
 	}
 	function cache() {
 		add([
 			'screen', 'screenOff', 'region', 
 			'regionOff', 'clearImage'
-		], CompletionItemKind.Method);
+		], CompletionItemKind.Method, "cache");
 	}
 	function env() {
 		add([
@@ -909,13 +941,13 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 			'setDebug', 'setMessageDone', 'setMessageStop',
 			'setMessageError', 'setMacroCutouts', 'setDeviceCutouts',
 			'cutouts'
-		], CompletionItemKind.Method);
+		], CompletionItemKind.Method, "env");
 	}
 	function Version() {
 		add([
 			'major', 'minor', 'build', 'revision',
 			'compare'
-		], CompletionItemKind.Method);
+		], CompletionItemKind.Method, "Version");
 	}
 	connection.console.log(`${line}`);
 	const last = line?.split(".");
@@ -923,7 +955,6 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 	if (last) {
 		current = last[last?.length - 1];
 	}
-	connection.console.log(`Current: ${current}`);
 	if (line?.includes(".") && ((current?.includes("(") && current.includes(")")) || !current?.includes("("))) {
 		// Include methods
 		connection.console.log(`Defined line with method calling: ${line}`);
@@ -971,10 +1002,20 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 		} else if (parent.match(/".*"/)) {
 			stringMethods();
 		} else if (parent == "Num") {
-			numberMethods();
+			NumMethods();
+		} else if (line.match(/\s*Sys.info.screen./)) {
+			sysMethods(1);
+		} else if (line.match(/\s*Sys.info.dev./)) {
+			sysMethods(2);
+		} else if (line.match(/\s*Sys.info.battery./)) {
+			sysMethods(3);
+		} else if (line.match(/\s*Sys.info.memory./)) {
+			sysMethods(4);
+		} else if (line.match(/\s*Sys.info./)) {
+			sysMethods(5);
 		} else if (parent == "Sys") {
-			sysMethods();
-		} else if (parent == "Map") {
+			sysMethods(0);
+		} else if (line.match(/\s*Map\s*\(.*\)/)) {
 			mapMethods();
 		} else if (parent == "Math") {
 			mathMethods();
@@ -1036,7 +1077,6 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 		} else if (line.match(/Version\s*\(.*\)./)) {
 			Version();
 		} else {
-			sysMethods();
 			mapMethods();
 			mathMethods();
 			SwipePointMethods();
@@ -1050,7 +1090,7 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 			Version();
 			arrayMethods();
 			stringMethods();
-			numberMethods();
+			NumMethods();
 			for (let i = 0; i < 2; i++) {
 				pointMethods(i);
 				multiSwipeMethods(i);
@@ -1058,13 +1098,14 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				OnScreenText(i);
 				dateTimeMethods(i);
 				TimeSpanMethods(i);
+				for (let j = i; j < 2; j++) {
+					regionMethods(j);
+					settingMethods(j);
+					sysMethods(j);
+				}
 			}
-			for (let i = 0; i < 4; i++) {
-				regionMethods(i);
-				settingMethods(i);
-			}
+			sysMethods(5);
 		}
-		// Get methods for build-in functions
 	} else {
 		// Include regular keywords
 		const posInDoc = _textDocumentPosition.position.line;
@@ -1093,7 +1134,7 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 				data: 'funNameIntellisense',
 			});
 		});
-		add(['var'], CompletionItemKind.Variable);
+		add(['var'], CompletionItemKind.Variable, "Keyword");
 		add([
 			'Sys', 'fun', 'out', 'in',
 			'wait', 'swipe', 'click', 'Map', 'Math',
@@ -1103,9 +1144,9 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 			'Stopwatch', 'Clipboard', 'Overlay',
 			'File', 'Cache', 'Env', 'Version',
 			'Num'
-		], CompletionItemKind.Function);
-		add(['class'], CompletionItemKind.Class);
-		add(['if', 'while', 'do', 'for', 'return'], CompletionItemKind.Keyword);
+		], CompletionItemKind.Function, "Keyword");
+		add(['class'], CompletionItemKind.Class, "Keyword");
+		add(['if', 'while', 'do', 'for', 'return'], CompletionItemKind.Keyword, "Keyword");
 	}
 	return intellisense;
 });
@@ -1115,127 +1156,451 @@ connection.onCompletion((_textDocumentPosition: TextDocumentPositionParams): Com
 type HintsDoc = {
 	[key: string]: [string, string[]];
 };
+function inString(arr:Array<string>) {
+	let str = '';
+	for (let i = 0; i < arr.length; i++) {
+		if (arr[i].includes("--c")) {
+			str += arr[i].slice(0, arr[i].indexOf("--c"));
+		} else {
+			str += `${arr[i]}\n`;
+		}
+	}
+	return str;
+}
+[
+
+];
 const hintsDoc: HintsDoc = {
 	// REGULAR KEYWORDS
-	var: ["Variable declaration", [
-		"Declare variable",
-		"\tvar i = \"hello\"",
-		"You can also declare this variable within blocks and it will be shown beyound",
-		"if (true) {",
-		"\tvar i = 0",
-		"}",
-		"Sys.alert(i) // 0"
-	]],
-	if: ["Condition declaration", [
-		"You can declare condition by \"if\" keyword.",
-		"var i = 1;",
-		"if (i == 0) {",
-		"\t// On true",
-		"\tSys.alert(\"i is equals zero\");",
-		"}",
-		"Above is example of single condition",
-		"var i = 94",
-		"if (i == 0) {",
-		"\t// On true",
-		"\tSys.alert(\"i is equals zero\");",
-		"} else {",
-		"\t// On false",
-		"\tSys.alert(\"i is not equals zero\")",
-		"}",
-		"This is if condition, whre \"else\" condition is executed on false",
-		"var i = 1",
-		"if (i == 0) {",
-		"\t// On true",
-		"\tSys.alert(\"i is equals zero\");",
-		"} else if (i == 1) {",
-		"\t// if i isn't equal zero and equal 1",
-		"\tSys.alert(\"i isn't equals zero and equals one\");",
-		"} else {",
-		"\tSys.alert(\"i is not equals both zero and one\");",
-	]],
-	while: ["While loop", [
-		"var arr = [1, 2, 3, 4, 5]",
-		"while(arr.length > 0) {",
-		"\tarr.pop()",
-		"}",
-		"It executes until a specific condition will be false",
-		"In common the actions inside loop will be executed unless condition is false",
-	]],
-	for: ["For loop", [
-		"for (var i = 0; i <= 15; i++) {",
-		"\tSys.toast(i);",
-		"}",
-		"The first position is declaration variables",
-		"The second is condition that checks per time before loop execution",
-		"The third place is an action that executed each time after loop, usually there increases iterator",
-		"The action at brackets is what will be executed",
-		"",
-		"In our case it will log fifteenth times numbers from 0 to 15",
-	]],
-	fun: ["Function declaration", [
-		"fun increase(number) {",
-		"\treturn number + 1",
-		"}",
-		"",
-		"var num = 0; // for now number is zero",
-		"num = increase(num) // increases number at one",
-		"",
-		"Firstly we declare the function with name \"increase\",",
-		"as parameter is \"number\".",
-		"Parameters are variables that receives values when a function is called",
-		"We can separate parameters by comma to let funciton have a few",
-		"Parameters have same properties as regular variable and available only within funciton",
-		"Then we returned number + 1 (mean number, given by user and plus one)",
-		"the return keyword indicates what value a function should back",
-		"Then we declared \"num\" variable and assigned 0",
-		"Then we assigned into \"num\" returned value by \"increase\" funciton",
-	]],
-	class: ["Class declaration", [
-		"class myClass(var1, var2) {",
-		"\tinit(var1, var2) { // constructor",
-		"\t\tthis.a = var1;",
-		"\t\tthis.b = var2",
-		"\t\tthis.c = \"hi\"",
-		"\t}",
-		"\tmethod(arg1) {",
-		"\t\t// Execute something",
-		"\t}",
-		"}",
-		"Classes are made to contain specific variables and their values, usually also methods to manage with them",
-		"No explanation here as because you should understand classes work to use (and better learn not via vscode hints)",
-	]],
+		KeywordVar: ["Variable declaration", [
+			"Declare variable",
+			"\tvar i = \"hello\"",
+			"The macrorify syntax only supports 'var' --c",
+			"declaration and is block variable.",
+			"Syntax allow to declare variable twice beyound --c",
+			"and then inside block variable with one name.--c",
+			"Example:",
+			"\tvar number = 0;",
+			"\tif (true) {",
+			"\t\tvar number = 1;",
+			"\tSys.alert(number); // 1",
+			"\t}",
+			"\tSys.alert(number) // 0",
+			"So in conclusion inside block will be value --c",
+			"of just declared variable and beyound value --c",
+			"of variable before."
+		]],
+		KeywordIf: ["Condition declaration", [
+			"The condition is executing different --c",
+			"codes by result of specific condition.",
+			"Example:",
+			"\tvar result = Region(1, 2, 3, 4).find(\"A template\"--c)",
+			"FParam.timeout(1000).sRate(3).mScore(0.7)",
+			"\tif (result) {",
+			"\t\tSys.alert(\"The template discovered\")",
+			"\t} else {",
+			"\t\tSys.alert(\"Region is not discovered\")",
+			"\t",
+			"In the example above into variable 'result' wrote --c",
+			"results of detection and if it is true then the output is: --c",
+			"The template discovered",
+			"Otherwise: Region is not discovered",
+			"The condition is always must be either true or false.",
+			"If a value is not boolean then it will be converted according: ",
+			"all numbers except 0: true",
+			"0: false",
+			"\"\": false",
+			"\"Anything here\": true",
+			"[]: false",
+			"[1, 2, 3]: true",
+			"null: false\n",
+			"The sign '!' is negative and makes condition opposite: ",
+			"\tvar i = 1;",
+			"\tif (i != 0) {",
+			"\t\tSys.alert(\"i is not zero\")",
+			"\t}"
+		]],
+		KeywordWhile: ["While loop", [
+			"var arr = [1, 2, 3, 4, 5]",
+			"while(arr.length > 0) {",
+			"\tarr.pop()",
+			"}",
+			"The actions inside loop executes unless condition is false",
+		]],
+		KeywordFor: ["For loop", [
+			"for (var i = 0; i <= 15; i = i + 1) {",
+			"\tSys.toast(i);",
+			"}",
+			"The first position is variables declaration",
+			"The second is condition that checks per time before loop execution",
+			"The third place is an action that executed each time after loop",
+			"The actions inside brackets is what should be repeated",
+			"",
+			"In our case it will log numbers from 0 to 15",
+		]],
+		KeywordFun: ["Function declaration", [
+			"Function is part of code that usually --c",
+			"perform specific patterns of actions that might be --c",
+			"repeated in a code. Declaration syntax:",
+			"\tfun add(number1, number2) {",
+			"\t\tvar result = number1 + number2",
+			"\t\treturn result",
+			"\t}",
+			"\tvar number1 = 809;",
+			"\tvar added = add(number1, 94)",
+			"The function above adds two numbers.",
+			"After fun keyword you should indicate how does the function is named",
+			"Parameters are variables that assigned by some --c",
+			"values on calling and can be used inside function",
+			"Return keyword is what should be returned in result",
+		]],
+		KeywordClass: ["Class declaration", [
+			"class myClass(var1, var2) {",
+			"\tinit(var1, var2) { // constructor",
+			"\t\tthis.a = var1;",
+			"\t\tthis.b = var2",
+			"\t\tthis.c = \"hi\"",
+			"\t}",
+			"\tmethod(arg1) {",
+			"\t\t// Execute something",
+			"\t}",
+			"}",
+			"Classes are made to contain specific variables and their values, usually also methods to manage with them",
+			"No explanation here as because you should understand classes work to use (and better learn not via vscode hints)",
+		]],
+		KeywordNum: ["Num keyword", [
+			"This keyword is usually uses to parse a string to a number",
+			"Available methods: ",
+			'parse'
+		]],
+		KeywordSys: ["Sys keyword", [
+			"This keyword is usually uses to provide system actions --c",
+			"like output message, open app, stop macro, turn off device etc.",
+			"Available methods: ",
+			"alert, stop, err, noti, playMedia, toast, --c",
+			"log, info, currentTime, currentVersion, sdk, lang, --c",
+			"darkMode, globalAction, dpi, openApp, wake"
+		]],
 	// Array methods
-	push: ["Array's methods", [
-		"Push method adds to end of an array specified value",
-		"\tvar arr = [1, 2, 3]",
-		"\tarr.push(4)",
-		"\tSys.alert(arr) // [1, 2, 3, 4]",
-	]],
-	pop: ["Array's methods", [
-		"Pop method removes last value from an array",
-		"\tvar arr = [1, 2, 3]",
-		"\tarr.pop()",
-		"\tSys.alert(arr) // [1, 2]",
-	]],
-	shift: ["Array's methods", [
-		"Shift method removes first element from an array",
-		"\tvar arr = [1, 2, 3]",
-		"\tarr.shift()",
-		"\tSys.alert(arr) // [2, 3]",
-	]],
-	unshift: ["Array's methods", [
-		"Unshift method adds specified value to a first index of an array",
-		"\tvar arr = [1, 2, 3]",
-		"\tarr.unshift(0)",
-		"\tSys.alert(arr) // [0, 1, 2, 3]",
-	]],
+		ArrayPush: ["Array method: push", [
+			"number push(element: any)\n",
+			"Adds one element to the end of an array and returns the new length of the array.",
+			"Parameters: ",
+			"\telement: The element to add",
+			"Return: ",
+			"\tThe new length of the array | number",
+		]],
+		ArrayPop: ["Array method: pop", [
+			"any pop()\n",
+			"Removes the last element from an array and returns that element. This method changes the length of the array.",
+			"Return: ",
+			"\tThe last element in the array | any",
+		]],
+		ArrayShift: ["Array method: shift", [
+			"any shift()",
+			"Removes the first element from an array and returns that element. This method changes the length of the array.",
+			"Return: ",
+			"\tThe first element in the array | any",
+		]],
+		ArrayUnshift: ["Array method: unshift", [
+			"number unshift(element: any)\n",
+			"Adds one element to the beginning of an array and returns the new length of the array.",
+			"Parameters: ",
+			"\telement: The element to add",
+			"Return: ",
+			"\tThe new length of the array | number",
+		]],
+		ArrayInsertAt: ["Array method: insertAt", [
+			"number insertAt(index: number, element: any)\n",
+			"Inserts one element at the index and returns the new length of the array.",
+			"Parameters: ",
+			"\tindex: The index to insert. index >= 0 and index < size",
+			"\telement: The element to insert",
+			"Return",
+			"\tThe new length of the array | number",
+		]],
+		ArrayInsertRange: ["Array method: insertRange", [
+			"number insertRange(index: number, elements: array)\n",
+			"Inserts elements at the index and returns the new length of the array.",
+			"Parameters: ",
+			"\tindex: The index to insert. index >= 0 and index < size",
+			"\telements: The array of elements to insert",
+			"Return: ",
+			"\tThe new length of the array | number",
+		]],
+		ArrayRemoveAt: ["Array method: removeAt", [
+			"any removeAt(index: number)\n",
+			"Removes one element at the index and returns the new length of the array.",
+			"Parameters: ",
+			"\tindex: The index of the element to remove. index >= 0 and index < size",
+			"Return: ",
+			"\tThe new length of the array | number",
+		]],
+		ArrayRemoveRange: ["Array method: removeRange", [
+			"number removeRange(startIndex: number, endIndex: number)\n",
+			"Removes elements from startIndex to endIndex and returns the new length of the array.",
+			"Parameters: ",
+			"\tstartIndex: The start index. index >= 0 and index < size",
+			"\tendIndex: The end index. index >= 0 and index < size",
+			"Return: ",
+			"\tThe new length of the array | number",
+		]],
+		ArraySlice: ["Array method: slice", [
+			"array slice(startIndex: number, endIndex: number)\n",
+			"Returns a shallow copy of a portion of an array into --c",
+			"a new array selected from startIndex to endIndex --c",
+			"(end not included). The original array will not be modified.",
+			"Parameters: ",
+			"\tstartIndex: The start index. index >= 0 and index < size",
+			"\tendIndex: The end index. index >= 0 and index <= size",
+			"Return: ",
+			"\tThe new array | array"
+		]],
+		ArrayConcat: ["Array method: concat", [
+			"array concat(elements: array)\n",
+			"Merges two arrays. This method does not change the existing arrays, but instead returns a new array.",
+			"Parameters: ",
+			"\telements: The array to merge",
+			"Return: ",
+			"\tThe new merged array | array",
+		]],
+		ArrayClear: ["Array method: clear", [
+			"number clear()\n",
+			"Removes all elements in the array. Return 0",
+			"Return: ",
+			"\tThe new size which is 0 | number",
+		]],
+		ArrayClone: ["Array method: clone", [
+			"array clone()\n",
+			"Shallow copy all the elements of the array",
+			"Return: ",
+			"\tThe new array | array",
+		]],
+	// Map methods
+		MapEntries: ["Map method: entries", [
+			"any[] entries()\n",
+			"Returns an array of arrays where each inner array represents a key-value pair [key, value].",
+			"Return: ",
+			"\tAn array of arrays where each inner array represents a key-value pair [key, value]"
+		]],
+		MapKeys: ["Map method: keys", [
+			"any[] keys()\n",
+			"Returns an array of all the keys contained in this map.",
+			"Return: ",
+			"\tAn array of all the keys contained in this map"
+		]],
+		MapValues: ["Map method: values", [
+			"any[] values()\n",
+			"Returns an array of all the values contained in this map.",
+			"Return: ",
+			"\tAn array of all the values contained in this map"
+		]],
+		MapClear: ["Map method: clear", [
+		"void clear()\n",
+		"Removes all of the mappings from this map (optional operation).",
+		"The map will be empty after this call returns."
+		]],
+		MapContainsKey: ["Map method: containsKey", [
+		"boolean containsKey(Object key)\n",
+		"Returns true if this map contains a mapping for the specified key.",
+		"More formally, returns true if and only if this map contains --c",
+		"a mapping for a key k such that (key==null ? k==null : key.equals(k)).",
+		"(There can be at most one such mapping.)",
+		"Parameters:",
+		"\tkey: key whose presence in this map is to be tested",
+		"Returns:",
+		"\ttrue if this map contains a mapping for the specified key"
+		]],
+		MapGet: ["Map method: get", [
+			"V get(Object key)\n",
+			"Returns the value to which the specified key is mapped, or null if this map contains no mapping for the key.",
+			"More formally, if this map contains a mapping from a --c", 
+			"key k to a value v such that (key==null ? k==null : key.equals(k)), --c",
+			"then this method returns v; otherwise it returns null. (There can be at most one such mapping.)",
+			"If this map permits null values, then a return value of null --c",
+			"does not necessarily indicate that the map contains no mapping for the key;", 
+			"it's also possible that the map explicitly maps the key to null.",
+			"The containsKey operation may be used to distinguish these two cases.",
+			"Parameters: ",
+			"\tkey: the key whose associated value is to be returned",
+			"Returns: ",
+			"\tthe value to which the specified key is mapped, or null if this map contains no mapping for the key"
+		]],
+		MapPut: ["Map method: put", [
+			"V put(K key, V value)\n",
+			"Associates the specified value with the specified key in this map (optional operation).",
+			"If the map previously contained a mapping for the key, the old value is replaced by the specified value.",
+			"(A map m is said to contain a mapping for a key k if and only if m.containsKey(k) would return true.)",
+			"Parameters:",
+			"\tkey: key with which the specified value is to be associated",
+			"\tvalue: value to be associated with the specified key",
+			"Returns:",
+			"\tthe previous value associated with key, or null if there was no mapping for key.--c",
+			"(A null return can also indicate that the map previously associated null with key, if the implementation supports null values.)"
+		]],
+		MapPutAll: ["Map method: putAll", [
+			"void putAll(Map<? extends K,? extends V> m)\n",
+			"Copies all of the mappings from the specified map to this map (optional operation).",
+			"The effect of this call is equivalent to that of calling put(k, v) --c",
+			"on this map once for each mapping from key k to value v in the specified map.",
+			"The behavior of this operation is undefined if --c",
+			"the specified map is modified while the operation is in progress.",
+			"Parameters:",
+			"\tm: mappings to be stored in this map"
+		]],
+		MapPutIfAbsent: ["Map method: putIfAbsent", [
+			"default V putIfAbsent(K key, V value)\n",
+			"If the specified key is not already associated with a value (or is mapped to null),--c", 
+			"associates it with the given value and returns null;",
+			"else returns the current value.",
+			"Other words if a value in an object is not equals to a given value, --c",
+			"the value in the object is set to value given as parameter and returned null",
+			"Parameters:",
+			"\tkey: key with which the specified value is to be associated",
+			"\tvalue: value to be associated with the specified key",
+			"Returns:",
+			"\tthe previous value associated with the specified key, --c", 
+			"or null if there was no mapping for the key.",
+			"(A null return can also indicate that the map previously associated null with the key, if the implementation supports null values.)"
+		]],
+		MapRemove: ["Map method: remove", [
+			"V remove(Object key)\n",
+			"Removes the mapping for a key from this map if it is present (optional operation).",
+			"More formally, if this map contains a mapping from --c",
+			"key k to value v such that (key==null ? k==null : key.equals(k)), that mapping is removed.",
+			"(The map can contain at most one such mapping.)",
+			"Returns the value to which this map previously associated the key, --c",
+			"or null if the map contained no mapping for the key.",
+			"If this map permits null values, then a return value --c",
+			"of null does not necessarily indicate that the map contained no mapping for the key;", 
+			"it's also possible that the map explicitly mapped the key to null.",
+			"The map will not contain a mapping for the specified key once the call returns.",
+			"Parameters:",
+			"\tkey - key whose mapping is to be removed from the map",
+			"Returns:",
+			"\tthe previous value associated with key, or null if there was no mapping for key."
+		]],
+		MapReplace: ["Map method: replace", [
+			"default V replace(K key, V value)\n",
+			"Replaces the entry for the specified key only if it is currently mapped to some value.",
+			"Parameters: ",
+			"\tkey: key with which the specified value is associated",
+			"\tvalue: value to be associated with the specified key",
+			"Returns: ",
+			"\tthe previous value associated with the specified key, or null if there was no mapping for the key.",
+			"(A null return can also indicate that the map previously associated null with the key, if the implementation supports null values.)"
+		]],
+		MapSize: ["Map method: size", [
+			"int size()\n",
+			"Returns the number of key-value mappings in this map.",
+			"If the map contains more than Integer.MAX_VALUE elements, returns Integer.MAX_VALUE.",
+			"Returns:",
+			"\tthe number of key-value mappings in this map"
+		]],
+		MapIsEmpty: ["Map method: isEmpty", [
+			"boolean isEmpty()\n",
+			"Returns true if this map contains no key-value mappings.",
+			"Returns:",
+			"\ttrue if this map contains no key-value mappings"
+		]],
+	// Num methods
+		NumParse: ["Num method: parse", [
+			"static number parse(value: number | string, default: number = null)",
+			"Try to parse the input into a number. --c",
+			"If the input is already a number then it's returned. --c",
+			"Default is returned if the input cannot be parsed",
+			"Parameters: ",
+			"\tvalue: The value to be parsed",
+			"\tdefault: The default value if parse failed",
+			"Return: ",
+			"\tParsed number or default | number",
+		]],
 	// Sys methods
-	alert: ["Outputs a message", [
-		"Sys.alert(\"hello\");",
-		"This will create a message for user with the specified content.",
-	]],
-	// Variable names intellisense
-	funNameIntellisense: ["Function", ["This function was declared in the code."]],
+		SysNoti: ["Static method: noti", [
+			"static void noti(name: string = null)\n",
+			"Notify the user by playing the notification sound.",
+			"Sound will be instantly stopped since the method --c",
+			"is recalled or macro was stopped",
+			"Parameters:",
+			"\tname: Name of the notification sound on your device. null to use the default"
+		]],
+		SysPlayMedia: ["Static method: playMedia", [
+			"static void playMedia(name: string, duration: number = -1, interval: number = 0, repeat: number = 1)\n",
+			"Play media file on the app data folder (/sdcard/Android/data/com.kok_emm.mobile/files)",
+			"Parameters:",
+			"\tname: Name of the file",
+			"\tduration: Custom duration. -1 for using the duration of the actual media file. Default: -1",
+			"\tinterval: Time to wait after each repeat. Default: 0",
+			"\trepeat: Number of times to repeat playing the file. Default: 1"
+		]],
+		SysToast: ["Static method: toast", [
+			"static void toast(message: string)\n",
+			"Notify the user by showing a toast message",
+			"Parameters:",
+			"\tmessage: The message"
+		]],
+		SysAlert: ["Sys method: alert", [
+			"static void alert(message: string)\n",
+			"Notify the user by showing an alert popup",
+			"Parameters:",
+			"\tmessage: The message",
+		]],
+		SysLog: ["Sys method: log", [
+			"static void log(message: string)\n",
+			"Log message to the console in Play Mode only if 'debug' is enabled",
+			"Parameters:",
+			"\tmessage: The message"
+		]],
+		SysErr: ["Sys method: err", [
+			"static void err(message: string)\n",
+			"Notify the user by showing an alert popup and stop the macro",
+			"Parameters:",
+			"\tmessage: The message"
+		]],
+		SysCurrentTime: ["Sys method: currentTime", [
+			"static number currentTime()\n",
+			"Return the current time in milliseconds",
+			"Return:",
+			"\tnumber: The current time"
+		]],
+		SysCurrentVersion: ["Sys method: currentVersion", [
+			"static Version currentVersion()\n",
+			"Return the current Version of the app",
+			"Return:",
+			"\tVersion: The current Version of the app"
+		]],
+		SysSdk: ["Sys method: sdk", [
+			"static number sdk()\n",
+			"Return the sdk number of the device",
+			"Return:",
+			"\tnumber: The sdk number of the device"
+		]],
+		SysLang: ["Sys method: lang", [
+			"static string lang()\n",
+			"Return the current language code of the device (en, fr, es, etc...)",
+			"Return:",
+			"\tstring: The current language code"
+		]],
+		SysDpi: ["Sys method: dpi", [
+			"static number dpi()\n",
+			"Return the current dpi",
+			"Return:",
+			"\tnumber: The current dpi"
+		]],
+		SysSetControlOpacity: ["DEPRECATED", [
+			"Sys method: setControlOpacity\n",
+			"Use Overlay.setOpacity() instead"
+		]],
+		SysInfo: ["Sys method: dpi", [
+			"static any info(property: string)\n",
+			"Query information about the system. --c",
+			"Some of the calls are expensive so try not to query them in a constant loop manner. --c",
+			"Return null if not found",
+			"Properties: ",
+			""
+		]],
+	// Function names intellisense
+		funNameIntellisense: ["Function", ["This function was declared in the code."]],
 };
 connection.onCompletionResolve((item: CompletionItem): CompletionItem => {
 	if (item.data instanceof Array && item.data[0] == "varNameIntellisense") {
@@ -1250,8 +1615,6 @@ connection.onCompletionResolve((item: CompletionItem): CompletionItem => {
 			doc.push(`Type: array`);
 		} else if (info.type == '"string"') {
 			doc.push(`Type: string`);
-		} else if (info.type == "1") {
-			doc.push(`Type: number`);
 		} else {
 			doc.push(`Type: ${info.type}`);
 		}
@@ -1266,12 +1629,12 @@ connection.onCompletionResolve((item: CompletionItem): CompletionItem => {
 				doc.push(`${value} |  ${info.reassignType[id]}`);
 			});
 		}
-		item.documentation = doc.join("\n");
+		item.documentation = inString(doc);
 	} else if (item.data in hintsDoc) {
 		const detail = hintsDoc[item.data][0];
 		const doc = hintsDoc[item.data][1];
 		item.detail = detail ? detail : "no info";
-		item.documentation = doc ? doc.join("\n") : "no info";
+		item.documentation = doc ? inString(doc) : "no info";
 	} else {
 		item.detail = "no info";
 		item.documentation = " ";
